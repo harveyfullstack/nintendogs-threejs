@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { DogActor, separateDogs } from '../../dog/actor';
 import { Brain } from '../../dog/brain';
 import { BREEDS, Breed, CoatDef } from '../../dog/breeds';
+import { isCompact } from '../../ui/device';
 import { clear, h } from '../../ui/dom';
 import { loadKennel } from '../../world/loaders';
 import { FollowCamera } from '../cameraRig';
@@ -38,38 +39,61 @@ export async function createKennel(game: Game, args?: { adopting?: boolean }): P
 
   // ---------- UI ----------
   const layer = game.overlay.layer;
-  const list = h('div', { class: 'panel', style: { position: 'absolute', left: '14px', top: '14px', bottom: '14px', width: '300px', padding: '16px', animation: 'none' } });
-  const info = h('div', { class: 'panel', style: { position: 'absolute', right: '14px', bottom: '14px', width: '320px', padding: '16px', display: 'none', animation: 'none' } });
-  const back = h('button', { class: 'btn', style: { position: 'absolute', right: '14px', top: '14px' }, onclick: () => game.go(save.dogs.length ? 'home' : 'title') }, save.dogs.length ? 'Back home' : 'Back');
+  const list = h('div', { class: 'panel kennel-list' });
+  const info = h('div', { class: 'panel kennel-info', style: { display: 'none' } });
+  const back = h('button', { class: 'btn corner-tr', onclick: () => game.go(save.dogs.length ? 'home' : 'title') }, save.dogs.length ? 'Back home' : 'Back');
   layer.append(list, info, back);
 
+  // on phones the panels cover a big part of the screen: centre the pen in what's left
+  const covered = { left: 0, bottom: 0 };
+  const measure = () => {
+    covered.left = covered.bottom = 0;
+    if (!isCompact()) return;
+    const r = list.getBoundingClientRect();
+    if (r.width > window.innerWidth * 0.7) {
+      // bottom sheet, with the puppy card above it
+      const i = info.getBoundingClientRect();
+      covered.bottom = window.innerHeight - (i.height ? Math.min(r.top, i.top) : r.top);
+    } else {
+      covered.left = r.right;
+      const i = info.getBoundingClientRect();
+      if (i.height) covered.bottom = window.innerHeight - i.top;
+    }
+  };
+  const ro = new ResizeObserver(measure);
+  ro.observe(list);
+  ro.observe(info);
+
+  let listScroll = 0;
   const renderList = (active?: string) => {
+    listScroll = list.querySelector('.kennel-breeds')?.scrollTop ?? listScroll;
     clear(list);
-    list.append(h('h2', { style: { fontSize: '24px' } }, 'Kennel'),
-      h('p', { style: { fontSize: '14px', marginTop: '-6px' } }, canAdopt
+    list.append(h('h2', null, 'Kennel'),
+      h('p', { class: 'intro' }, canAdopt
         ? `Choose a breed to meet its puppies. You have $${save.money.toLocaleString()}.`
         : `You can't take another dog home yet. Earn more Owner Points! (${save.dogs.length}/${maxDogs(save)} dogs)`));
-    const wrap = h('div', { style: { overflow: 'auto', maxHeight: 'calc(100% - 90px)', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' } });
+    const wrap = h('div', { class: 'kennel-breeds' });
     for (const b of BREEDS) {
-      const row = h('div', { class: 'card' + (b.id === active ? ' selected' : ''), style: { textAlign: 'left', padding: '10px 12px' }, onclick: () => showBreed(b) },
+      const row = h('div', { class: 'card' + (b.id === active ? ' selected' : ''), onclick: () => showBreed(b) },
         h('div', { class: 'name' }, b.name),
         h('div', { class: 'meta' }, `${b.size} · from $${b.price}`),
-        h('div', { style: { fontSize: '12px', color: '#7b8193', marginTop: '2px' } }, b.blurb));
+        h('div', { class: 'blurb' }, b.blurb));
       wrap.append(row);
     }
     list.append(wrap);
+    wrap.scrollTop = listScroll;
   };
 
   const showInfo = (p: Pup | null) => {
     selected = p;
     clear(info);
     if (!p) { info.style.display = 'none'; return; }
-    info.style.display = 'block';
+    info.style.display = '';
     const afford = save.money >= p.price;
     info.append(
-      h('h2', { style: { fontSize: '22px' } }, p.breed.name),
+      h('h2', null, p.breed.name),
       h('p', null, `${p.coat.name} · `, h('b', { style: { color: p.sex === 'male' ? '#3d8fe0' : '#f0609a' } }, p.sex === 'male' ? '♂ Male' : '♀ Female')),
-      h('p', { class: 'price', style: { fontSize: '22px', fontFamily: 'var(--round)', color: '#2c9b4a' } }, `$${p.price}`),
+      h('p', { class: 'price' }, `$${p.price}`),
       h('div', { class: 'actions' },
         h('button', { class: 'btn primary', disabled: !canAdopt || !afford ? true : undefined, onclick: () => adopt(p) }, afford ? 'Take me home!' : 'Not enough money')),
     );
@@ -119,7 +143,7 @@ export async function createKennel(game: Game, args?: { adopting?: boolean }): P
   };
 
   const adopt = (p: Pup) => {
-    const input = h('input', { class: 'textfield', placeholder: 'Puppy name', maxlength: 12 }) as HTMLInputElement;
+    const input = h('input', { class: 'textfield', placeholder: 'Puppy name', maxlength: 12, autocomplete: 'off', autocapitalize: 'words', enterkeyhint: 'done', spellcheck: 'false' }) as HTMLInputElement;
     const confirmName = () => {
       const name = input.value.trim();
       if (!name) { input.focus(); return; }
@@ -170,6 +194,7 @@ export async function createKennel(game: Game, args?: { adopting?: boolean }): P
   return {
     scene,
     camera,
+    viewInset: () => covered,
     update(dt, t) {
       for (const p of pups) {
         p.brain.update(dt);
@@ -182,6 +207,7 @@ export async function createKennel(game: Game, args?: { adopting?: boolean }): P
       k.update?.(dt, t, focus);
     },
     exit() {
+      ro.disconnect();
       game.renderer.domElement.removeEventListener('pointerdown', onDown);
       clearPups();
       k.dispose();

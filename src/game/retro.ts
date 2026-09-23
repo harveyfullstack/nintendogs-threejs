@@ -55,15 +55,10 @@ export class RetroPass {
   private material: THREE.ShaderMaterial;
   private scene = new THREE.Scene();
   private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private checked = false;
 
   constructor() {
-    this.rt = new THREE.WebGLRenderTarget(1, 1, {
-      samples: 4,
-      type: THREE.HalfFloatType,
-      minFilter: THREE.NearestFilter,
-      magFilter: THREE.NearestFilter,
-      depthBuffer: true,
-    });
+    this.rt = RetroPass.target(THREE.HalfFloatType);
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         tDiffuse: { value: this.rt.texture },
@@ -80,11 +75,31 @@ export class RetroPass {
     this.scene.add(this.quad);
   }
 
+  private static target(type: THREE.TextureDataType) {
+    return new THREE.WebGLRenderTarget(1, 1, {
+      samples: 4,
+      type,
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      depthBuffer: true,
+    });
+  }
+
   get enabled() {
     return this.mode !== 'off';
   }
 
   render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
+    if (!this.checked) {
+      // some mobile GPUs can't render to half-float targets; 8-bit clips highlights but still works
+      this.checked = true;
+      const ext = renderer.extensions;
+      if (!ext.has('EXT_color_buffer_float') && !ext.has('EXT_color_buffer_half_float')) {
+        this.rt.dispose();
+        this.rt = RetroPass.target(THREE.UnsignedByteType);
+        this.material.uniforms.tDiffuse.value = this.rt.texture;
+      }
+    }
     const cfg = RETRO_MODES.find((m) => m.id === this.mode) ?? RETRO_MODES[1];
     // virtual resolution: one "DS pixel" is `cfg.pixel` CSS pixels
     const css = renderer.getSize(new THREE.Vector2());

@@ -21,9 +21,14 @@ type LoopHandle = { stop(): void; setVolume(v: number): void };
 const noopLoop: LoopHandle = { stop() {}, setVolume() {} };
 
 export const sound = {
+  /** Call from a user gesture. Once the module is loaded this reaches the AudioContext synchronously, which iOS insists on. */
   async init() {
-    await load();
+    if (!audioMod) await load();
     try { await audioMod?.audio.init(); } catch { /* ignore */ }
+  },
+  /** Audio is actually playing (mobile browsers keep it suspended until a tap). */
+  get unlocked(): boolean {
+    return (audioMod?.audio as any)?.context?.state === 'running';
   },
   dog(kind: string, voice: Voice, opts?: { volume?: number; pan?: number }) {
     try { return (audioMod?.audio as any)?.dog(kind, voice, opts); } catch { return undefined; }

@@ -6,6 +6,7 @@ import { DOG_SLOTS, DogSave, deleteSave, maxDogs } from '../game/state';
 import { TRICKS } from '../game/tricks';
 import { RETRO_MODES } from '../game/retro';
 import { icon, props } from '../world/loaders';
+import { Tap, canFullscreen, standalone, toggleFullscreen, touchUI } from './device';
 import { ICONS, clear, h, svg } from './dom';
 
 const EMOJI: Record<string, string> = {
@@ -83,13 +84,13 @@ export interface GoOutChoice { id: 'walk' | 'shop' | 'kennel' | 'gym' | 'secondh
 export function goOutMenu(game: Game, onPick: (id: GoOutChoice['id']) => void) {
   const dog = game.dog;
   const opt = (id: GoOutChoice['id'], title: string, desc: string, ico: keyof typeof ICONS, color: string) =>
-    h('div', { class: 'card', style: { textAlign: 'left', display: 'flex', gap: '12px', alignItems: 'center', padding: '14px' }, onclick: () => { sound.sfx('select'); m.close(); onPick(id); } },
-      h('div', { class: 'icon-btn ' + color, style: { width: '56px', height: '56px', flex: 'none' } }, svg(ICONS[ico])),
-      h('div', null, h('div', { class: 'name', style: { fontSize: '19px' } }, title), h('div', { class: 'meta', style: { fontWeight: '600' } }, desc)));
+    h('div', { class: 'card option', onclick: () => { sound.sfx('select'); m.close(); onPick(id); } },
+      h('div', { class: 'icon-btn ' + color }, svg(ICONS[ico])),
+      h('div', null, h('div', { class: 'name' }, title), h('div', { class: 'meta' }, desc)));
   const tired = dog && dog.energy < 20;
   const body = h('div', { class: 'panel', style: { width: 'min(640px, 92vw)' } },
     h('h2', null, 'Go Out'),
-    h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' } },
+    h('div', { class: 'option-grid' },
       opt('walk', 'Walk', tired ? `${dog!.name} is tired… maybe later.` : `Take ${dog?.name ?? 'your pup'} for a walk around town.`, 'paw', 'green'),
       opt('shop', 'Pet Supply', 'Food, toys and accessories.', 'shop', 'orange'),
       opt('gym', 'Gym', 'Enter contests and win prizes.', 'trophy', 'pink'),
@@ -139,15 +140,27 @@ export function statusPanel(game: Game, onSwitch: (d: DogSave) => void) {
     content.append(h('p', { style: { color: '#7b8193', fontSize: '13px', marginTop: '12px' } },
       next !== undefined ? `Earn ${next.toLocaleString()} Owner Points to be able to keep another dog (${s.dogs.length}/${maxDogs(s)}).` : `You can keep up to ${maxDogs(s)} dogs.`));
     if (s.photos.length) {
-      content.append(h('h3', null, 'Photo album'), h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' } },
-        ...s.photos.slice().reverse().map((p) => h('div', { class: 'card', onclick: () => window.open(p.dataUrl, '_blank') },
-          h('img', { src: p.dataUrl, style: { width: '100%', height: 'auto', borderRadius: '10px' } }),
+      content.append(h('h3', null, 'Photo album'), h('div', { class: 'grid photo-grid' },
+        ...s.photos.slice().reverse().map((p) => h('div', { class: 'card', onclick: () => showPhoto(game, p) },
+          h('img', { src: p.dataUrl, alt: p.dogName }),
           h('div', { class: 'meta' }, `${p.dogName} · ${new Date(p.date).toLocaleDateString()}`)))));
     }
   };
   render();
   sound.sfx('open');
   return m;
+}
+
+/** A photo, big, with a way to keep it (long-press on phones, a download elsewhere). */
+function showPhoto(game: Game, p: { dataUrl: string; date: number; dogName: string }) {
+  const name = `${p.dogName || 'puppy'}-${new Date(p.date).toISOString().slice(0, 10)}.jpg`;
+  const m = game.overlay.modal(h('div', { class: 'panel lightbox' },
+    h('img', { src: p.dataUrl, alt: p.dogName, 'data-menu': '' }),
+    h('div', { class: 'meta' }, `${p.dogName} · ${new Date(p.date).toLocaleDateString()}`),
+    touchUI ? h('p', { style: { fontSize: '13px', color: '#7b8193' } }, 'Press and hold the photo to save it.') : null,
+    h('div', { class: 'actions', style: { justifyContent: 'center' } },
+      h('a', { class: 'btn', href: p.dataUrl, download: name }, 'Save'),
+      h('button', { class: 'btn primary', onclick: () => m.close() }, 'Close'))));
 }
 
 export function classLabel(n: number) {
@@ -157,9 +170,9 @@ export function classLabel(n: number) {
 export function settingsPanel(game: Game, onChange: () => void) {
   const s = game.save.settings;
   const slider = (label: string, key: 'music' | 'sfx' | 'quality', min: number, max: number, step: number) => {
-    const input = h('input', { type: 'range', min, max, step, value: s[key], style: { width: '220px' } }) as HTMLInputElement;
+    const input = h('input', { type: 'range', min, max, step, value: s[key], 'aria-label': label }) as HTMLInputElement;
     input.addEventListener('input', () => { (s as any)[key] = Number(input.value); onChange(); game.persist(); });
-    return h('div', { class: 'row', style: { justifyContent: 'space-between', margin: '10px 0' } }, h('b', null, label), input);
+    return h('div', { class: 'row slider-row' }, h('b', null, label), input);
   };
   const looks = h('div', { class: 'row', style: { gap: '6px' } });
   const renderLooks = () => {
@@ -177,18 +190,26 @@ export function settingsPanel(game: Game, onChange: () => void) {
     slider('Music', 'music', 0, 1, 0.05),
     slider('Sound effects', 'sfx', 0, 1, 0.05),
     slider('Fur quality', 'quality', 0.6, 1.3, 0.1),
-    h('div', { class: 'row', style: { justifyContent: 'space-between', margin: '10px 0' } }, h('b', null, 'Look'), looks),
+    h('div', { class: 'row slider-row' }, h('b', null, 'Look'), looks),
+    canFullscreen && !standalone ? h('div', { class: 'row slider-row' }, h('b', null, 'Full screen'),
+      h('button', { class: 'tab', onclick: () => { sound.sfx('select'); toggleFullscreen(); } }, 'Toggle')) : null,
     h('p', { style: { fontSize: '13px', color: '#7b8193' } }, 'Fur quality applies the next time a scene loads.'),
+    touchUI && !standalone && !canFullscreen ? h('p', { style: { fontSize: '13px', color: '#7b8193' } }, 'Tip: add this page to your Home Screen to play full screen.') : null,
     h('h3', null, 'How to play'),
     h('ul', { class: 'help-list' },
-      h('li', null, 'Stroke your puppy with the mouse to pet it. It loves chin and back rubs!'),
-      h('li', null, 'Click and hold on the floor and your pup will follow your hand.'),
-      h('li', null, 'Hold the 🎤 button (or Space) and say its name to call it, or type in the box.'),
+      touchUI
+        ? h('li', null, 'Stroke your puppy with your finger to pet it. It loves chin and back rubs!')
+        : h('li', null, 'Stroke your puppy with the mouse to pet it. It loves chin and back rubs!'),
+      h('li', null, `${Tap} and hold on the floor and your pup will follow your hand.`),
+      touchUI
+        ? h('li', null, 'Tap 🎤 and say its name to call it, or tap ⌨️ to type.')
+        : h('li', null, 'Hold the 🎤 button (or Space) and say its name to call it, or type in the box.'),
       h('li', null, 'Pick a toy from Supplies, then flick it to throw.'),
       h('li', null, 'Press Training (💡), guide your pup into a pose, then say a word when the light bulb appears.'),
+      touchUI ? h('li', null, 'Pinch with two fingers to zoom in and out.') : null,
     ),
     h('div', { class: 'actions' },
-      h('button', { class: 'btn small', style: { borderColor: '#ef5a5a', color: '#ef5a5a' }, onclick: () => {
+      h('button', { class: 'btn small danger', onclick: () => {
         if (confirm('Delete your save and start over?')) { deleteSave(); location.reload(); }
       } }, 'Delete save'),
       h('button', { class: 'btn primary', onclick: () => m.close() }, 'Done')),

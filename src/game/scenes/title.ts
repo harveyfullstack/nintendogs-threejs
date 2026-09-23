@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { DogActor, separateDogs } from '../../dog/actor';
 import { Brain } from '../../dog/brain';
 import { getBreed } from '../../dog/breeds';
+import { Tap } from '../../ui/device';
 import { h } from '../../ui/dom';
 import { loadRoom } from '../../world/loaders';
 import type { GameScene } from '../engine';
@@ -45,7 +46,7 @@ export async function createTitle(game: Game): Promise<GameScene> {
 
   const ui = h('div', { class: 'title-screen' });
   const logo = h('div', { class: 'logo' }, 'nintendo', h('span', { class: 'dogs' }, 'gs'), h('small', null, 'THREE.JS EDITION'));
-  const press = h('div', { class: 'press' }, 'Click to start');
+  const press = h('div', { class: 'press' }, `${Tap} to start`);
   ui.append(logo, press);
   game.overlay.layer.append(ui);
 
@@ -58,24 +59,27 @@ export async function createTitle(game: Game): Promise<GameScene> {
     press.remove();
     showMenu();
   };
-  ui.addEventListener('pointerdown', start);
-  game.renderer.domElement.addEventListener('pointerdown', start, { once: true });
+  // start on the click, not pointerdown: a tap's end is what unlocks audio on phones, and the
+  // menu buttons that appear under the finger mustn't catch the rest of the same tap
+  ui.addEventListener('click', start);
+  const canvas = game.renderer.domElement;
+  canvas.addEventListener('click', start);
 
   const showMenu = () => {
     const s = game.save;
-    const buttons = h('div', { style: { display: 'flex', gap: '14px' } });
+    const buttons = h('div', { class: 'title-buttons' });
     if (s.dogs.length) {
-      buttons.append(h('button', { class: 'btn primary', style: { fontSize: '22px', padding: '14px 34px' }, onclick: () => { sound.sfx('select'); game.go('home'); } }, `Continue`));
+      buttons.append(h('button', { class: 'btn primary', onclick: () => { sound.sfx('select'); game.go('home'); } }, `Continue`));
     }
-    buttons.append(h('button', { class: 'btn', style: { fontSize: '22px', padding: '14px 34px' }, onclick: () => newGame() }, s.dogs.length ? 'New Game' : 'Start'));
+    buttons.append(h('button', { class: 'btn', onclick: () => newGame() }, s.dogs.length ? 'New Game' : 'Start'));
     ui.append(buttons);
-    if (s.dogs.length) ui.append(h('div', { class: 'press', style: { animation: 'none', fontSize: '17px' } }, `${s.ownerName ? s.ownerName + ' · ' : ''}${s.dogs.map((d) => d.name).join(', ')}`));
+    if (s.dogs.length) ui.append(h('div', { class: 'press still' }, `${s.ownerName ? s.ownerName + ' · ' : ''}${s.dogs.map((d) => d.name).join(', ')}`));
   };
 
   const newGame = () => {
     sound.sfx('select');
     if (game.save.dogs.length && !confirm('Start a new game? Your current save will be replaced.')) return;
-    const input = h('input', { class: 'textfield', placeholder: 'Your name', maxlength: 14 }) as HTMLInputElement;
+    const input = h('input', { class: 'textfield', placeholder: 'Your name', maxlength: 14, autocomplete: 'off', autocapitalize: 'words', enterkeyhint: 'done', spellcheck: 'false' }) as HTMLInputElement;
     const go = () => {
       const name = input.value.trim() || 'Owner';
       m.close();
@@ -114,6 +118,7 @@ export async function createTitle(game: Game): Promise<GameScene> {
       room.update?.(dt, t, center);
     },
     exit() {
+      canvas.removeEventListener('click', start);
       for (const p of pups) { p.actor.group.removeFromParent(); p.actor.dispose(); }
       room.dispose();
     },

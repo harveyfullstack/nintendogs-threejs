@@ -2,6 +2,11 @@
 // DS microphone. Typed input is the fallback everywhere.
 
 type Listener = (text: string, final: boolean) => void;
+type StateListener = (listening: boolean) => void;
+type ErrorListener = (error: string) => void;
+
+/** Errors that mean voice won't work here at all (no permission, no mic, insecure page). */
+const FATAL = ['not-allowed', 'service-not-allowed', 'audio-capture'];
 
 interface RecognitionLike {
   lang: string;
@@ -18,16 +23,20 @@ interface RecognitionLike {
 
 export class Voice {
   readonly supported: boolean;
+  /** supported and not blocked (turns false after a permission error) */
+  available: boolean;
   listening = false;
   private rec: RecognitionLike | null = null;
   private listeners: Listener[] = [];
+  private stateListeners: StateListener[] = [];
+  private errorListeners: ErrorListener[] = [];
   private finalSent = false;
   private lastInterim = '';
   lastError = '';
 
   constructor() {
     const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    this.supported = !!Ctor;
+    this.supported = this.available = !!Ctor;
     if (!Ctor) return;
     const rec: RecognitionLike = new Ctor();
     rec.lang = navigator.language || 'en-US';
@@ -54,11 +63,13 @@ export class Voice {
     };
     rec.onerror = (e: any) => {
       this.lastError = e.error || 'error';
+      if (FATAL.includes(this.lastError)) this.available = false;
+      for (const l of this.errorListeners) l(this.lastError);
     };
     rec.onend = () => {
       // if the user let go before a final result, use the last interim guess
       if (!this.finalSent && this.lastInterim) this.emit(this.lastInterim, true);
-      this.listening = false;
+      this.setListening(false);
     };
     this.rec = rec;
   }
@@ -68,8 +79,25 @@ export class Voice {
     return () => { this.listeners = this.listeners.filter((l) => l !== fn); };
   }
 
+  /** Called when listening starts and stops (tap-to-talk sessions end by themselves). */
+  onState(fn: StateListener) {
+    this.stateListeners.push(fn);
+    return () => { this.stateListeners = this.stateListeners.filter((l) => l !== fn); };
+  }
+
+  onError(fn: ErrorListener) {
+    this.errorListeners.push(fn);
+    return () => { this.errorListeners = this.errorListeners.filter((l) => l !== fn); };
+  }
+
   private emit(text: string, final: boolean) {
     for (const l of this.listeners) l(text, final);
+  }
+
+  private setListening(on: boolean) {
+    if (this.listening === on) return;
+    this.listening = on;
+    for (const l of this.stateListeners) l(on);
   }
 
   start() {
@@ -79,9 +107,9 @@ export class Voice {
     this.lastError = '';
     try {
       this.rec.start();
-      this.listening = true;
+      this.setListening(true);
     } catch {
-      this.listening = false;
+      this.setListening(false);
     }
   }
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { DogActor, DogHit } from '../dog/actor';
 import type { Brain } from '../dog/brain';
+import { screenScale, touchUI } from '../ui/device';
 import { h } from '../ui/dom';
 import { props } from '../world/loaders';
 import type { ToyKind } from '../world/types';
@@ -38,10 +39,18 @@ export class PlayController {
   onNameHeard: ((d: PlayDog) => void) | null = null;
   /** optional hook for scenes that want to intercept speech (tutorials) */
   interceptSpeech: ((text: string) => boolean) | null = null;
+  /** the light bulb was tapped: a good moment to start listening */
+  onBulbTap: (() => void) | null = null;
 
   private raycaster = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
   private down = false;
+  /** the pointer driving the current stroke; other fingers are ignored */
+  private pointerId = -1;
+  /** fingers currently on the 3D view; two or more means a pinch, so hands off until they lift */
+  private touches = new Set<number>();
+  private pinching = false;
+  private lastPointer = touchUI ? 'touch' : 'mouse';
   private downOn: 'dog' | 'floor' | 'toy' | 'none' = 'none';
   private petDog: PlayDog | null = null;
   private lastHit: DogHit | null = null;
@@ -137,6 +146,15 @@ export class PlayController {
 
   private pointerDown(e: PointerEvent) {
     if (!this.enabled || e.button > 0) return;
+    this.lastPointer = e.pointerType;
+    if (e.pointerType !== 'mouse') {
+      // a primary touch starts a fresh sequence, so nothing lost from the last one can wedge us
+      if (e.isPrimary) { this.cancelStroke(); this.touches.clear(); this.pinching = false; }
+      this.touches.add(e.pointerId);
+      if (this.touches.size > 1) { this.cancelStroke(); this.pinching = true; return; }
+    }
+    if (this.pinching || this.down) return;
+    this.pointerId = e.pointerId;
     this.setRay(e);
     this.down = true;
     this.samples = [{ t: performance.now(), x: e.clientX, y: e.clientY }];
@@ -165,6 +183,7 @@ export class PlayController {
         this.gesture = { start: dh.hit, startT: performance.now(), path: [{ t: performance.now(), x: e.clientX, y: e.clientY }], dog: dh.dog };
       } else {
         this.touchDog(dh.dog, dh.hit, true);
+        if (this.mode === 'brush') this.moveBrush(dh.hit);
       }
       return;
     }
@@ -181,7 +200,8 @@ export class PlayController {
   }
 
   private pointerMove(e: PointerEvent) {
-    if (!this.enabled) return;
+    if (!this.enabled || this.pinching) return;
+    if (this.down ? e.pointerId !== this.pointerId : e.pointerType !== 'mouse') return;
     this.setRay(e);
     const now = performance.now();
     if (this.down) {
@@ -213,15 +233,37 @@ export class PlayController {
   }
 
   private pointerUp(e: PointerEvent) {
-    if (!this.down) return;
+    this.touches.delete(e.pointerId);
+    if (this.pinching) {
+      if (!this.touches.size) this.pinching = false;
+      return;
+    }
+    if (!this.down || e.pointerId !== this.pointerId) return;
     this.down = false;
-    if (this.handToy && this.downOn === 'toy') this.releaseHandToy();
-    if (this.gesture) { this.classifyGesture(); this.gesture = null; }
+    if (this.handToy && this.downOn === 'toy') {
+      if (e.type === 'pointercancel') this.samples = [];
+      this.releaseHandToy();
+    }
+    if (this.gesture && e.type !== 'pointercancel') this.classifyGesture();
+    this.gesture = null;
     if (this.petDog) { this.petDog.brain.setPet(null); this.petDog = null; }
     this.setHand(null);
     this.ring.style.opacity = '0';
     this.downOn = 'none';
-    void e;
+    // no hover on touch screens, so don't leave the brush floating where the finger lifted
+    if (e.pointerType !== 'mouse' && this.brush) this.brush.visible = false;
+  }
+
+  /** A second finger landed (pinch zoom): drop whatever the first one was doing, but keep a held toy. */
+  private cancelStroke() {
+    if (!this.down) return;
+    this.down = false;
+    this.gesture = null;
+    this.samples = [];
+    if (this.petDog) { this.petDog.brain.setPet(null); this.petDog = null; }
+    this.setHand(null);
+    this.ring.style.opacity = '0';
+    this.downOn = 'none';
   }
 
   private showRing(e: PointerEvent) {
@@ -315,6 +357,11 @@ export class PlayController {
 
   holdToy(kind: ToyKind) {
     if (this.handToy) this.dropHandToy();
+    if (this.lastPointer !== 'mouse') {
+      // no cursor to hang it on: hold it low in the middle of the screen, ready to flick
+      this.ndc.set(0, -0.45);
+      this.raycaster.setFromCamera(this.ndc, this.camera);
+    }
     // reuse an existing world toy of that kind
     let e = this.toys.list.find((t) => t.kind === kind && !t.carrier && !t.inHand);
     if (!e) e = this.toys.add(props().makeToy(kind), new THREE.Vector3());
@@ -368,6 +415,10 @@ export class PlayController {
       vx = (b.x - a.x) / dt;
       vy = (b.y - a.y) / dt;
     }
+    // swipe speeds are in screen pixels, so a phone flick covers less ground than a mouse one
+    const k = screenScale();
+    vx /= k;
+    vy /= k;
     const flick = Math.hypot(vx, vy);
     if (e.kind === 'rope' && this.focus.brain.tugging) {
       // let go: the dog wins the rope
@@ -536,11 +587,13 @@ export class PlayController {
     const posture = d.brain.posture;
     const p = g.path;
     const dur = (p[p.length - 1].t - g.startT) / 1000;
-    const dx = p[p.length - 1].x - p[0].x;
-    const dy = p[p.length - 1].y - p[0].y;
-    const len = p.reduce((s, q, i) => (i ? s + Math.hypot(q.x - p[i - 1].x, q.y - p[i - 1].y) : 0), 0);
+    // measure strokes relative to the screen so they're as easy on a phone as on a monitor
+    const k = screenScale();
+    const dx = (p[p.length - 1].x - p[0].x) / k;
+    const dy = (p[p.length - 1].y - p[0].y) / k;
+    const len = p.reduce((s, q, i) => (i ? s + Math.hypot(q.x - p[i - 1].x, q.y - p[i - 1].y) : 0), 0) / k;
     const region = g.start?.region ?? null;
-    const isTap = len < 12 && dur < 0.4;
+    const isTap = len < (this.lastPointer === 'mouse' ? 12 : 20) && dur < 0.4;
     const now = performance.now();
     let trick: TrickId | null = null;
 
@@ -592,7 +645,7 @@ export class PlayController {
   showBulb(d: PlayDog, trick: TrickId) {
     this.clearBulb();
     sound.sfx('lightbulb');
-    const img = h('div', { class: 'bulb', html: BULB_SVG, title: 'Say a command!' });
+    const img = h('div', { class: 'bulb', html: BULB_SVG, title: 'Say a command!', onclick: () => this.onBulbTap?.() });
     const remove = this.game.overlay.track(img, () => {
       const p = d.actor.headWorld();
       p.y += d.actor.model.design.dims.hs * 0.14;

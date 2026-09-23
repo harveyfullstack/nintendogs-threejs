@@ -56,22 +56,19 @@ export async function createPark(game: Game): Promise<GameScene> {
   const pd: PlayDog = { save: d, actor, brain };
   const play = new PlayController(game, camera, [pd], toys, scene);
   play.throwScale = 2.6;
-  const offWheel = cam.attachWheel(game.renderer.domElement);
+  const offZoom = cam.attachZoom(game.renderer.domElement);
 
   // HUD
   const card = new StatusCard(game);
   card.refresh(d);
-  const say = new SayBox((t) => play.hear(t));
-  const toyBar = h('div', { class: 'hud-bottom' });
+  const say = new SayBox((t) => play.hear(t), { notify: (t) => game.overlay.toast(t) });
+  play.onBulbTap = () => say.activate();
+  // the toys scroll sideways on small screens; Go Home stays put
+  const toyStrip = h('div', { class: 'hud-scroll' });
   for (const it of ITEMS.filter((i) => i.category === 'toy' && (game.save.inventory[i.id] ?? 0) > 0)) {
-    const b = h('button', { class: 'icon-btn', style: { background: '#fff', color: '#3a3a48' }, title: it.name, onclick: () => { sound.sfx('click'); play.holdToy(it.prop!.toy!); } });
-    const vis = itemVisual(game, it.id);
-    vis.style.width = '44px'; vis.style.height = '44px';
-    if (vis.classList.contains('emoji')) vis.style.fontSize = '30px';
-    b.append(vis);
-    toyBar.append(b);
+    toyStrip.append(h('button', { class: 'icon-btn white toy-btn', title: it.name, 'aria-label': it.name, onclick: () => { sound.sfx('click'); play.holdToy(it.prop!.toy!); } }, itemVisual(game, it.id)));
   }
-  toyBar.append(iconBtn('home', 'Go Home', () => game.go('home'), 'green'));
+  const toyBar = h('div', { class: 'hud-bottom' }, toyStrip, iconBtn('home', 'Go Home', () => game.go('home'), 'green'));
   const left = h('div', { class: 'hud-left' }, iconBtn('whistle', 'Whistle', () => play.whistle(), 'green'));
   game.overlay.layer.append(card.el, toyBar, say.el, left);
   game.overlay.toast(`Welcome to the park! Throw a toy for ${d.name}.`);
@@ -111,7 +108,7 @@ export async function createPark(game: Game): Promise<GameScene> {
     exit() {
       play.dispose();
       say.dispose();
-      offWheel();
+      offZoom();
       actor.drop();
       actor.group.removeFromParent();
       for (const t of [...toys.list]) toys.remove(t);

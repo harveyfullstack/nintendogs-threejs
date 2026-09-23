@@ -26,19 +26,19 @@ export async function createShop(game: Game, args?: { kind?: 'pet' | 'secondhand
         : 'repeating-linear-gradient(-45deg, #efe8fb 0 40px, #e6dcf8 40px 80px)',
     },
   });
-  const money = h('div', { class: 'money', style: { fontSize: '26px' } });
+  const money = h('div', { class: 'money' });
   const content = h('div');
-  const keeper = h('div', { style: { display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '8px' } },
-    h('div', { style: { fontSize: '56px' } }, kind === 'pet' ? '🧑‍🍳' : '🧙'),
-    h('div', { class: 'panel', style: { padding: '10px 16px', borderRadius: '18px', animation: 'none', boxShadow: 'none', border: '3px solid #f1e3c7' } },
+  const keeper = h('div', { class: 'shop-keeper' },
+    h('div', { class: 'face' }, kind === 'pet' ? '🧑‍🍳' : '🧙'),
+    h('div', { class: 'panel' },
       kind === 'pet' ? 'Welcome to Pet Supply! Everything your pup needs.' : "Heh heh… got any treasures for me? I'll pay good money."));
-  const panel = h('div', { class: 'panel', style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'min(920px, 94vw)', height: 'min(760px, 90vh)', display: 'flex', flexDirection: 'column', animation: 'none' } },
+  const panel = h('div', { class: 'panel centered shop-panel' },
     h('div', { class: 'row', style: { justifyContent: 'space-between' } },
       h('h2', { style: { margin: 0 } }, kind === 'pet' ? '🛍️ Pet Supply' : '💰 Secondhand Shop'),
       money,
       h('button', { class: 'btn', onclick: () => game.go('home') }, 'Leave')),
     keeper,
-    h('div', { style: { overflow: 'auto', flex: '1' } }, content));
+    h('div', { class: 'shop-body' }, content));
   game.overlay.layer.append(bg, panel);
 
   let tab: ItemCategory | 'sell' | 'rooms' = kind === 'pet' ? 'food' : 'sell';
@@ -52,7 +52,7 @@ export async function createShop(game: Game, args?: { kind?: 'pet' | 'secondhand
     const tabRow = h('div', { class: 'tabs' });
     for (const [id, label] of tabs) tabRow.append(h('button', { class: 'tab' + (tab === id ? ' active' : ''), onclick: () => { tab = id; sound.sfx('select'); render(); } }, label));
     content.append(tabRow);
-    const grid = h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' } });
+    const grid = h('div', { class: 'grid wide' });
     content.append(grid);
     if (tab === 'sell') {
       const owned = Object.entries(save.collectibles).filter(([, n]) => n > 0);
@@ -102,7 +102,7 @@ export async function createShop(game: Game, args?: { kind?: 'pet' | 'secondhand
         have ? h('span', { class: 'count' }, it.consumable ? '×' + have : '✓') : null,
         itemVisual(game, it.id),
         h('div', { class: 'name' }, it.name),
-        h('div', { style: { fontSize: '12px', color: '#7b8193', minHeight: '32px' } }, it.desc),
+        h('div', { class: 'desc' }, it.desc),
         h('button', { class: 'btn small primary', style: { marginTop: '6px' }, disabled: ownedTool ? true : undefined, onclick: () => {
           if (!game.spend(it.price)) { sound.sfx('error'); game.overlay.toast("You don't have enough money."); return; }
           save.inventory[it.id] = have + (it.id === 'shampoo' ? 3 : 1);

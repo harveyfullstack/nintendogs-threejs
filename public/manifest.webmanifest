@@ -1,0 +1,16 @@
+{
+  "name": "nintendogs · three.js edition",
+  "short_name": "nintendogs",
+  "description": "A fan remake of Nintendogs in the browser with procedurally generated, fur-shaded puppies.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#cfe9f6",
+  "theme_color": "#45b4e4",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
