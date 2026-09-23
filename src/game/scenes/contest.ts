@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Brain } from '../../dog/brain';
 import { BREEDS } from '../../dog/breeds';
+import { touchUI } from '../../ui/device';
 import { h } from '../../ui/dom';
 import { SayBox } from '../../ui/hud';
 import { loadAgility, loadDiscArena, loadObedience } from '../../world/loaders';
@@ -62,7 +63,7 @@ function showResults(game: Game, kind: ContestKind, cls: number, you: Result, ot
     h('h2', null, place === 1 ? `${d.name} wins!` : `${d.name} placed #${place}`),
     h('p', null, `${CLASSES[cls]} class`),
     h('div', { style: { textAlign: 'left', margin: '12px 0' } }, ...all.map((r, i) =>
-      h('div', { class: 'trick-row', style: r.you ? { border: '3px solid #ff9b30' } : {} },
+      h('div', { class: 'trick-row' + (r.you ? ' you' : '') },
         h('span', { class: 'tname' }, `${i + 1}. ${r.name}`),
         h('span', { class: 'how' }, r.breed),
         h('b', null, `${lowerIsBetter ? r.score.toFixed(1) : Math.round(r.score)} ${unit}`)))),
@@ -74,8 +75,8 @@ function showResults(game: Game, kind: ContestKind, cls: number, you: Result, ot
 }
 
 function banner(game: Game) {
-  const el = h('div', { class: 'mode-banner show', style: { top: '18px', fontSize: '20px' } });
-  const score = h('div', { class: 'panel', style: { position: 'absolute', right: '16px', top: '16px', padding: '10px 18px', fontFamily: 'var(--round)', fontSize: '20px', animation: 'none' } });
+  const el = h('div', { class: 'mode-banner top show' });
+  const score = h('div', { class: 'panel score-box' });
   game.overlay.layer.append(el, score);
   return { el, score };
 }
@@ -230,7 +231,7 @@ async function obedienceContest(game: Game, cls: number): Promise<GameScene> {
   let score = 0;
   let awaiting: TrickId | 'come' | null = null;
   const ui = banner(game);
-  const timer = h('div', { class: 'bar', style: { position: 'absolute', top: '70px', left: '50%', transform: 'translateX(-50%)', width: '300px', height: '12px' } }, h('i', { style: { width: '100%', background: '#ff9b30' } }));
+  const timer = h('div', { class: 'bar contest-timer' }, h('i', { style: { width: '100%', background: '#ff9b30' } }));
   game.overlay.layer.append(timer);
   const max = list.length * 15;
 
@@ -286,7 +287,7 @@ async function obedienceContest(game: Game, cls: number): Promise<GameScene> {
       p.mastery = Math.min(1, p.mastery + 0.04);
       award(best === want);
     });
-  });
+  }, { solo: true, notify: (t) => game.overlay.toast(t) });
   game.overlay.layer.append(say.el);
   const finish = () => {
     ui.el.textContent = 'All done!';
@@ -356,7 +357,9 @@ async function agilityContest(game: Game, cls: number): Promise<GameScene> {
   const ray = new THREE.Raycaster();
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const ui = banner(game);
-  ui.el.textContent = 'Hold the mouse where your pup should run. Go through the obstacles in order!';
+  ui.el.textContent = touchUI
+    ? 'Touch and hold where your pup should run. Go through the obstacles in order!'
+    : 'Hold the mouse where your pup should run. Go through the obstacles in order!';
 
   // marker over the next obstacle
   const marker = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 16), new THREE.MeshStandardMaterial({ color: '#ffb400', emissive: '#ff8a00', emissiveIntensity: 0.6 }));
@@ -375,6 +378,7 @@ async function agilityContest(game: Game, cls: number): Promise<GameScene> {
   el.addEventListener('pointerdown', down);
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
 
   const entry = (o: AgilityObstacle) => o.position.clone().addScaledVector(o.dir, -o.length / 2 - 0.25);
   const exit = (o: AgilityObstacle) => o.position.clone().addScaledVector(o.dir, o.length / 2 + 0.35);
@@ -484,6 +488,7 @@ async function agilityContest(game: Game, cls: number): Promise<GameScene> {
       el.removeEventListener('pointerdown', down);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
       actor.group.removeFromParent();
       course.dispose();
     },

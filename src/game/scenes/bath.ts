@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { DogHit } from '../../dog/actor';
 import { Brain } from '../../dog/brain';
+import { touchUI } from '../../ui/device';
 import { h } from '../../ui/dom';
 import { loadBathroom, props } from '../../world/loaders';
 import type { GameScene } from '../engine';
@@ -81,11 +82,11 @@ export async function createBath(game: Game, args?: { dogId?: string }): Promise
 
   // UI
   const layer = game.overlay.layer;
-  const title = h('div', { class: 'mode-banner show', style: { top: '18px' } });
-  const meter = h('div', { class: 'bar', style: { width: '240px', height: '14px' } }, h('i', { style: { width: '0%', background: '#45b4e4' } }));
+  const title = h('div', { class: 'mode-banner top show' });
+  const meter = h('div', { class: 'bar' }, h('i', { style: { width: '0%', background: '#45b4e4' } }));
   const next = h('button', { class: 'btn primary', style: { display: 'none' } });
-  const box = h('div', { class: 'panel', style: { position: 'absolute', bottom: '18px', left: '50%', transform: 'translateX(-50%)', padding: '12px 18px', display: 'flex', gap: '16px', alignItems: 'center', animation: 'none' } }, meter, next);
-  const leave = h('button', { class: 'btn small', style: { position: 'absolute', right: '16px', top: '16px' }, onclick: () => game.go('home') }, 'Stop');
+  const box = h('div', { class: 'panel hud-box' }, meter, next);
+  const leave = h('button', { class: 'btn small corner-tr', onclick: () => game.go('home') }, 'Stop');
   layer.append(title, box, leave);
 
   const setStage = (s: Stage) => {
@@ -93,7 +94,7 @@ export async function createBath(game: Game, args?: { dogId?: string }): Promise
     next.style.display = 'none';
     shampoo.visible = shower.visible = towel.visible = false;
     if (s === 'lather') title.textContent = '🧴 Rub the shampoo all over!';
-    if (s === 'rinse') { title.textContent = '🚿 Hold the mouse button to rinse off the suds'; loopScrub?.stop(); loopScrub = null; }
+    if (s === 'rinse') { title.textContent = touchUI ? '🚿 Touch and hold to rinse off the suds' : '🚿 Hold the mouse button to rinse off the suds'; loopScrub?.stop(); loopScrub = null; }
     if (s === 'shake') {
       title.textContent = 'Shake shake shake!';
       loopShower?.stop(); loopShower = null;
@@ -179,6 +180,8 @@ export async function createBath(game: Game, args?: { dogId?: string }): Promise
   };
   const onDown = (e: PointerEvent) => {
     pointerDown = true;
+    // a new stroke: without this, a finger landing somewhere new counts as one huge rub
+    lastHit = null;
     onMove(e);
     if (stage === 'rinse') { spraying = true; if (!loopShower) loopShower = sound.loop('shower'); }
   };
@@ -193,6 +196,7 @@ export async function createBath(game: Game, args?: { dogId?: string }): Promise
   el.addEventListener('pointerdown', onDown);
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
   sound.music('home');
 
   return {
@@ -260,6 +264,7 @@ export async function createBath(game: Game, args?: { dogId?: string }): Promise
       el.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       loopScrub?.stop();
       loopShower?.stop();
       u.uWet.value = 0;

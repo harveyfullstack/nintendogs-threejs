@@ -9,6 +9,23 @@ export interface GameScene {
   update(dt: number, t: number): void;
   /** optional custom render; defaults to renderer.render(scene, camera) */
   render?(renderer: THREE.WebGLRenderer): void;
+  /** Screen edges (CSS px) hidden behind opaque UI; the view is re-centred on what's left. */
+  viewInset?(): { left?: number; right?: number; top?: number; bottom?: number } | null;
+}
+
+// Portrait screens: scenes are framed for landscape, so widen the vertical field
+// of view until the horizontal one is about the scene's own, up to a limit.
+const PORTRAIT_REF_ASPECT = 1;
+const MAX_PORTRAIT_FOV = 80;
+
+function fitFov(camera: THREE.PerspectiveCamera) {
+  const base: number = (camera.userData.baseFov ??= camera.fov);
+  let fov = base;
+  if (camera.aspect < PORTRAIT_REF_ASPECT) {
+    const t = Math.tan(THREE.MathUtils.degToRad(base / 2)) * (PORTRAIT_REF_ASPECT / camera.aspect);
+    fov = Math.min(MAX_PORTRAIT_FOV, Math.max(base, THREE.MathUtils.radToDeg(2 * Math.atan(t))));
+  }
+  camera.fov = fov;
 }
 
 /** Shared renderer defaults for the game and all test pages. */
@@ -51,7 +68,12 @@ export class Engine {
 
   constructor(readonly container: HTMLElement) {
     this.renderer = createRenderer(container);
-    window.addEventListener('resize', () => this.resize());
+    const resize = () => this.resize();
+    window.addEventListener('resize', resize);
+    // phones: browser bars, the on-screen keyboard and rotation don't always fire a (timely) window resize
+    window.visualViewport?.addEventListener('resize', resize);
+    window.addEventListener('orientationchange', () => setTimeout(resize, 300));
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(container);
     this.resize();
   }
 
@@ -67,9 +89,44 @@ export class Engine {
       this.renderer.setSize(this.width, this.height, false);
     }
     if (this.current) {
-      this.current.camera.aspect = this.width / this.height;
-      this.current.camera.updateProjectionMatrix();
+      const cam = this.current.camera;
+      cam.aspect = this.width / this.height;
+      fitFov(cam);
+      cam.updateProjectionMatrix();
+      this.viewKey = '';
     }
+  }
+
+  // Shift the projection (not the camera) so the scene centres in the part of the
+  // screen that isn't covered by panels, easing over when the panels change.
+  private view = { x: 0, y: 0 };
+  private viewKey = '';
+  private viewCam: THREE.Camera | null = null;
+  private applyViewInset(dt: number) {
+    const s = this.current;
+    if (!s) return;
+    const cam = s.camera;
+    const i = s.viewInset?.() ?? null;
+    const tx = i ? ((i.right ?? 0) - (i.left ?? 0)) / 2 : 0;
+    const ty = i ? ((i.bottom ?? 0) - (i.top ?? 0)) / 2 : 0;
+    if (this.viewCam !== cam) {
+      this.viewCam = cam;
+      this.view.x = tx;
+      this.view.y = ty;
+      this.viewKey = '';
+    } else {
+      const k = 1 - Math.exp(-dt * 8);
+      this.view.x += (tx - this.view.x) * k;
+      this.view.y += (ty - this.view.y) * k;
+      if (Math.abs(tx - this.view.x) < 0.5) this.view.x = tx;
+      if (Math.abs(ty - this.view.y) < 0.5) this.view.y = ty;
+    }
+    const w = this.width, h = this.height;
+    const key = `${this.view.x.toFixed(1)},${this.view.y.toFixed(1)},${w},${h}`;
+    if (key === this.viewKey) return;
+    this.viewKey = key;
+    if (this.view.x || this.view.y) cam.setViewOffset(w, h, this.view.x, this.view.y, w, h);
+    else if (cam.view) cam.clearViewOffset();
   }
 
   async setScene(s: GameScene) {
@@ -118,6 +175,7 @@ export class Engine {
       this.time += dt;
       if (this.current) {
         this.applyPendingRatio();
+        this.applyViewInset(dt);
         this.current.update(dt, this.time);
         if (this.current.render) this.current.render(this.renderer);
         else if (this.retro.enabled) this.retro.render(this.renderer, this.current.scene, this.current.camera);

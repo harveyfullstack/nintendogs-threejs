@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DogActor } from '../../dog/actor';
 import { BREEDS, getBreed } from '../../dog/breeds';
+import { Tap, isCompact, safeInsets, tap } from '../../ui/device';
 import { h } from '../../ui/dom';
 import { loadTown, props } from '../../world/loaders';
 import { TOWN, blockRect, findPoi, intersection, pitch, poiEdge, poiEntrance } from '../../world/townLayout';
@@ -74,7 +75,7 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
   }
 
   const W = 760, H = 600;
-  const cv = h('canvas', { width: W * 2, height: H * 2, style: { width: W + 'px', height: H + 'px', borderRadius: '18px', cursor: 'crosshair', touchAction: 'none', display: 'block' } }) as HTMLCanvasElement;
+  const cv = h('canvas', { width: W * 2, height: H * 2, style: { width: W + 'px', height: H + 'px' } }) as HTMLCanvasElement;
   const ctx = cv.getContext('2d')!;
   const P = pitch();
   const pad = 30;
@@ -82,9 +83,10 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
   const sc = Math.min(sx, sz);
   const ox = (W * 2 - TOWN.cols * P * sc) / 2, oz = (H * 2 - TOWN.rows * P * sc) / 2;
   const toC = (x: number, z: number) => [ox + x * sc, oz + z * sc];
-  const fromC = (cx: number, cy: number) => [(cx * 2 - ox) / sc, (cy * 2 - oz) / sc];
+  /** canvas pixels -> town coordinates */
+  const fromC = (cx: number, cy: number) => [(cx - ox) / sc, (cy - oz) / sc];
   const dog = game.dog!;
-  const info = h('div', { style: { fontFamily: 'var(--round)', fontSize: '17px' } });
+  const info = h('div', { class: 'info' });
   const icons: Record<PoiKind, string> = { home: '🏠', park: '🌳', shop: '🛍️', gym: '🏆', kennel: '🐶', secondhand: '💰' };
 
   const draw = () => {
@@ -162,8 +164,8 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
     ctx.fillText('🐕', dx, dz);
     const used = plan.nodes.length + Math.max(0, returnNodes().length - 1);
     info.textContent = plan.nodes.length
-      ? `Route: ${used}/${MAX_EDGES} blocks · click streets to extend, then press Go!`
-      : `Click the streets next to your house to plan a walk for ${dog.name}.`;
+      ? `Route: ${used}/${MAX_EDGES} blocks · ${tap} streets to extend, then press Go!`
+      : `${Tap} the streets next to your house to plan a walk for ${dog.name}.`;
   };
   function line(x0: number, y0: number, x1: number, y1: number) { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); }
 
@@ -209,7 +211,11 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
     draw();
   };
   let dragging = false;
-  const pos = (e: PointerEvent) => { const r = cv.getBoundingClientRect(); return fromC(e.clientX - r.left, e.clientY - r.top); };
+  // the canvas is scaled to fit the screen, so map through its displayed size
+  const pos = (e: PointerEvent) => {
+    const r = cv.getBoundingClientRect();
+    return fromC(((e.clientX - r.left) / r.width) * cv.width, ((e.clientY - r.top) / r.height) * cv.height);
+  };
   cv.addEventListener('pointerdown', (e) => { dragging = true; const [x, z] = pos(e); addNear(x, z); });
   cv.addEventListener('pointermove', (e) => {
     if (!dragging) return;
@@ -219,7 +225,9 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
     const p = intersection(...last);
     if (Math.hypot(p.x - x, p.z - z) > P * 0.55) addNear(x, z);
   });
-  window.addEventListener('pointerup', () => (dragging = false));
+  const stopDrag = () => (dragging = false);
+  window.addEventListener('pointerup', stopDrag);
+  window.addEventListener('pointercancel', stopDrag);
 
   const go = () => {
     if (!plan.nodes.length) { game.overlay.toast('Draw a route first!'); return; }
@@ -227,18 +235,53 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
     sound.sfx('select');
     game.go('walk', { nodes: full, presents: plan.presents });
   };
-  const panel = h('div', { class: 'panel', style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', padding: '16px 18px', animation: 'none' } },
-    h('div', { class: 'row', style: { justifyContent: 'space-between', marginBottom: '10px' } },
-      h('h2', { style: { margin: '0' } }, 'Walk'), info),
+  const panel = h('div', { class: 'panel centered walkmap' },
+    h('div', { class: 'head' }, h('h2', null, 'Walk'), info),
     cv,
     h('div', { class: 'actions' },
       h('button', { class: 'btn', onclick: () => game.go('home') }, 'Cancel'),
       h('button', { class: 'btn', onclick: () => { plan.nodes.length = 0; draw(); } }, 'Clear'),
       h('button', { class: 'btn primary', onclick: go }, "Let's go!")));
   game.overlay.layer.append(panel);
+
+  // Size the map to the screen: everything else in the panel keeps its size and the map
+  // takes what's left (beside the buttons on short landscape screens, above them otherwise).
+  const fit = () => {
+    const inset = safeInsets();
+    const margin = isCompact() ? 16 : 40;
+    const availW = window.innerWidth - inset.left - inset.right - margin;
+    const availH = window.innerHeight - inset.top - inset.bottom - margin;
+    const cs = getComputedStyle(panel);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    const beside = cs.gridTemplateAreas.startsWith('"map');
+    const size = (k: number) => {
+      cv.style.width = Math.max(120, Math.floor(W * k)) + 'px';
+      cv.style.height = Math.max(95, Math.floor(H * k)) + 'px';
+    };
+    // start small so the panel isn't clamped while we measure, then refine once the text has re-wrapped
+    size(0.25);
+    for (let pass = 0; pass < 2; pass++) {
+      const p = panel.getBoundingClientRect(), c = cv.getBoundingClientRect();
+      const chromeW = beside ? p.width - c.width : padX;
+      const chromeH = beside ? padY : p.height - c.height;
+      size(Math.min(1, (availW - chromeW) / W, (availH - chromeH) / H));
+    }
+  };
+  window.addEventListener('resize', fit);
   draw();
+  fit();
   sound.music('walk');
-  return { scene, camera, update() {} };
+  return {
+    scene,
+    camera,
+    update() {},
+    exit() {
+      window.removeEventListener('resize', fit);
+      window.removeEventListener('pointerup', stopDrag);
+      window.removeEventListener('pointercancel', stopDrag);
+    },
+  };
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, hh: number, r: number) {
@@ -384,12 +427,12 @@ export async function createWalk(game: Game, args: { nodes: Node[]; presents: Wa
 
   // --- UI
   const layer = game.overlay.layer;
-  const bar = h('div', { class: 'panel', style: { position: 'absolute', top: '14px', left: '50%', transform: 'translateX(-50%)', padding: '10px 18px', display: 'flex', gap: '16px', alignItems: 'center', animation: 'none' } });
-  const progress = h('div', { class: 'bar', style: { width: '260px', height: '12px' } }, h('i', { style: { width: '0%', background: '#ff9b30' } }));
-  const label = h('div', { style: { fontFamily: 'var(--round)', fontWeight: '600', fontSize: '18px' } }, `Walking ${d.name}`);
+  const bar = h('div', { class: 'panel walk-bar' });
+  const progress = h('div', { class: 'bar' }, h('i', { style: { width: '0%', background: '#ff9b30' } }));
+  const label = h('div', { class: 'label' }, `Walking ${d.name}`);
   bar.append(label, progress);
-  const tugBtn = h('button', { class: 'btn', style: { position: 'absolute', right: '20px', bottom: '20px' }, onclick: () => { tug = 1; sound.sfx('rope'); } }, 'Tug leash');
-  const homeBtn = h('button', { class: 'btn small', style: { position: 'absolute', left: '20px', bottom: '20px' }, onclick: () => endWalk(true) }, 'Head home');
+  const tugBtn = h('button', { class: 'btn corner-br', onclick: () => { tug = 1; sound.sfx('rope'); } }, 'Tug leash');
+  const homeBtn = h('button', { class: 'btn small corner-bl', onclick: () => endWalk(true) }, 'Head home');
   layer.append(bar, tugBtn, homeBtn);
 
   const raycaster = new THREE.Raycaster();
@@ -466,7 +509,7 @@ export async function createWalk(game: Game, args: { nodes: Node[]; presents: Wa
           p.position.copy(behind);
           scene.add(p);
           poopObj = p;
-          game.overlay.toast('Oops! Click the poop to clean it up.');
+          game.overlay.toast(`Oops! ${Tap} the poop to clean it up.`);
         }, 2400);
         break;
       }

@@ -1,5 +1,6 @@
 import '../ui/ui.css';
 import { BREEDS } from '../dog/breeds';
+import { installTouchGuards } from '../ui/device';
 import { h } from '../ui/dom';
 import { Game } from './game';
 import { createBath } from './scenes/bath';
@@ -16,6 +17,7 @@ import { loadSave, newDog, newSave, simulateTime, writeSave } from './state';
 import { TRICKS } from './tricks';
 
 export async function boot() {
+  installTouchGuards();
   const app = document.getElementById('app')!;
   const loading = h('div', { class: 'loading' }, h('div', { class: 'paw' }, '🐾'), 'Loading…');
   document.body.append(loading);
@@ -95,8 +97,11 @@ export async function boot() {
   else await game.go('title');
   loading.style.opacity = '0';
   setTimeout(() => loading.remove(), 400);
-  // unlock audio on first gesture
-  const unlock = () => { sound.init().then(() => sound.setVolumes(game.save.settings.music, game.save.settings.sfx)); window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); };
-  window.addEventListener('pointerdown', unlock);
-  window.addEventListener('keydown', unlock);
+  // Unlock audio from a gesture. Touch browsers only count the end of a tap (pointerup,
+  // touchend, click) as one, and iOS can suspend audio again later, so keep listening.
+  const unlock = () => {
+    if (sound.unlocked) return;
+    sound.init().then(() => sound.setVolumes(game.save.settings.music, game.save.settings.sfx));
+  };
+  for (const type of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) window.addEventListener(type, unlock, { capture: true, passive: true });
 }

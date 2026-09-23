@@ -2649,22 +2649,28 @@ export class AudioSystem {
       this.eng = new AudioEngine(this.ctx, this.clips);
       this.eng.forceSynth = this.synthOnly;
       this.applyLevels();
-      // A silent blip inside the gesture unlocks output on iOS.
-      const s = this.ctx.createBufferSource();
-      s.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
-      s.connect(this.ctx.destination);
-      s.start();
       document.addEventListener('visibilitychange', this.onVisibility);
       void this.loadSamples();
       if (this.wantTrack) this.eng.music(this.wantTrack);
     }
     if (this.ctx.state !== 'running' && !document.hidden) {
+      // iOS starts contexts suspended (and suspends them again after interruptions)
+      this.blip();
       try {
         await this.ctx.resume();
       } catch {
         /* resumed on a later gesture */
       }
     }
+  }
+
+  /** A silent blip inside a user gesture unlocks output on iOS. */
+  private blip() {
+    if (!this.ctx) return;
+    const s = this.ctx.createBufferSource();
+    s.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+    s.connect(this.ctx.destination);
+    s.start();
   }
 
   get ready(): boolean {

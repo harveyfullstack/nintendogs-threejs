@@ -16,11 +16,16 @@ npm run dev      # http://localhost:5178
 
 `npm run build` produces a static site in `dist/` that can be hosted anywhere.
 
+### On a phone
+
+The game plays on phones and tablets in portrait or landscape, with touch controls throughout. To try the dev server on a phone on the same Wi-Fi, open `http://<your computer's IP>:5178`. Voice commands need a secure (HTTPS) page, so over plain HTTP the 🎤 button offers the keyboard instead; a static build on any HTTPS host gets the microphone too. Adding the page to your Home Screen runs it full screen.
+
 ### How to play
 
-- **Pet** your puppy by stroking it with the mouse. It loves chin, head and belly rubs, and lots of belly rubs make it roll over.
-- **Lead** it: click and hold on the floor and it follows your hand.
-- **Call** it: hold 🎤 (or the Space bar) and say its name, or type into the box. Voice uses the Web Speech API (Chrome).
+- **Pet** your puppy by stroking it with the mouse or your finger. It loves chin, head and belly rubs, and lots of belly rubs make it roll over.
+- **Lead** it: click (or touch) and hold on the floor and it follows your hand.
+- **Call** it: hold 🎤 (or the Space bar) and say its name, or type into the box. On touch screens, tap 🎤 and speak, or tap ⌨️ to type. Voice uses the Web Speech API (Chrome, Safari).
+- **Zoom** with the mouse wheel, or pinch with two fingers.
 - **Play**: pick a toy from Supplies and flick it to throw. Pull on the tug rope, squeak the duck.
 - **Teach tricks** the Nintendogs way: press *Training*, guide your pup into a pose (stroke down its back to sit, drag its head down to lie down, swipe sideways across it to roll over, circle its head to spin…), and when the light bulb appears, say any word. Repeat until it's learned; from then on that word is the command.
 - **Care** for it: food, water, brushing and baths. Hunger, thirst and dirt change in real time and are saved in your browser.

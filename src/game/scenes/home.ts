@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Brain, BrainEnv } from '../../dog/brain';
 import { DogActor, separateDogs } from '../../dog/actor';
+import { touchUI } from '../../ui/device';
 import { h, iconBtn } from '../../ui/dom';
 import { SayBox, StatusCard, renderPortrait } from '../../ui/hud';
 import { goOutMenu, settingsPanel, statusPanel, suppliesDrawer } from '../../ui/menus';
@@ -95,7 +96,7 @@ class HomeScene implements GameScene {
     this.play.onModeChange = (m) => this.onMode(m);
     this.play.onTrickLearned = () => this.card.refresh(this.focusSave());
     this.play.interceptSpeech = (t) => this.nameLessonHear(t);
-    this.offs.push(this.cam.attachWheel(game.renderer.domElement));
+    this.offs.push(this.cam.attachZoom(game.renderer.domElement));
 
     this.buildHud();
     // greet
@@ -181,7 +182,8 @@ class HomeScene implements GameScene {
     const layer = game.overlay.layer;
     this.card = new StatusCard(game);
     this.card.refresh(this.focusSave());
-    this.say = new SayBox((t) => this.play.hear(t));
+    this.say = new SayBox((t) => this.play.hear(t), { notify: (t) => game.overlay.toast(t) });
+    this.play.onBulbTap = () => this.say.activate();
     this.trainBtn = iconBtn('bulb', 'Training', () => { sound.sfx('click'); this.play.setMode('training'); });
     const left = h('div', { class: 'hud-left' },
       this.trainBtn,
@@ -329,7 +331,9 @@ class HomeScene implements GameScene {
     const game = this.game;
     const body = h('div', { class: 'panel', style: { width: 'min(520px, 92vw)', textAlign: 'center' } },
       h('h2', null, `Welcome home, ${d.save.name}!`),
-      h('p', null, `Your puppy doesn't know its name yet. Say “${d.save.name}” out loud (hold 🎤 or the Space bar), or type it and press Enter, a few times until it learns it.`),
+      h('p', null, touchUI
+        ? `Your puppy doesn't know its name yet. Tap 🎤 and say “${d.save.name}” out loud, or tap ⌨️ and type it, a few times until it learns it.`
+        : `Your puppy doesn't know its name yet. Say “${d.save.name}” out loud (hold 🎤 or the Space bar), or type it and press Enter, a few times until it learns it.`),
       h('div', { class: 'actions', style: { justifyContent: 'center' } }, h('button', { class: 'btn primary', onclick: () => m.close() }, 'OK!')));
     const m = game.overlay.modal(body);
   }

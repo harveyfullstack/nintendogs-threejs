@@ -10,6 +10,17 @@ const EMOTE_GLYPH: Record<Emote, string> = {
 
 const _v = new THREE.Vector3();
 
+/**
+ * Close when a tap both starts and ends on the backdrop itself. Closing on the
+ * click (not on pointerdown) means the tap is used up here, so on touch screens
+ * it can't land as a "ghost click" on the HUD button underneath.
+ */
+function dismissOnOutsideTap(back: HTMLElement, close: () => void) {
+  let armed = false;
+  back.addEventListener('pointerdown', (e) => { armed = e.target === back; });
+  back.addEventListener('click', (e) => { if (armed && e.target === back) close(); armed = false; });
+}
+
 export class Overlay {
   readonly root: HTMLElement;
   readonly layer: HTMLElement; // scene specific HUD goes here
@@ -57,17 +68,17 @@ export class Overlay {
   modal(content: HTMLElement, opts: { dismiss?: boolean; onClose?: () => void } = {}) {
     const back = h('div', { class: 'backdrop' }, content);
     const close = () => { back.remove(); opts.onClose?.(); };
-    if (opts.dismiss !== false) back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
+    if (opts.dismiss !== false) dismissOnOutsideTap(back, close);
     this.modals.append(back);
     return { close, el: back };
   }
 
   drawer(content: HTMLElement, onClose?: () => void) {
-    const wrap = h('div', { style: { position: 'absolute', inset: '0' } });
+    const wrap = h('div', { class: 'drawer-wrap' });
     const d = h('div', { class: 'drawer' }, content);
     wrap.append(d);
     const close = () => { wrap.remove(); onClose?.(); };
-    wrap.addEventListener('pointerdown', (e) => { if (e.target === wrap) close(); });
+    dismissOnOutsideTap(wrap, close);
     this.modals.append(wrap);
     return { close, el: d };
   }
