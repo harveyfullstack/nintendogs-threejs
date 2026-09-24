@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { reportError } from '../ui/errors';
 import { RetroPass } from './retro';
 
 export interface GameScene {
@@ -170,20 +171,25 @@ export class Engine {
     this.running = true;
     const loop = (ts: number) => {
       if (!this.running) return;
-      this.timer.update(ts);
-      const dt = Math.min(0.05, this.timer.getDelta()) * this.timeScale;
-      this.time += dt;
-      if (this.current) {
-        this.applyPendingRatio();
-        this.applyViewInset(dt);
-        this.current.update(dt, this.time);
-        if (this.current.render) this.current.render(this.renderer);
-        else if (this.retro.enabled) this.retro.render(this.renderer, this.current.scene, this.current.camera);
-        else this.renderer.render(this.current.scene, this.current.camera);
-      }
-      this.onFrame?.(dt);
-      this.adaptResolution(this.timer.getDelta());
+      // schedule the next frame first: one frame that throws must never stop the game
       requestAnimationFrame(loop);
+      try {
+        this.timer.update(ts);
+        const dt = Math.min(0.05, this.timer.getDelta()) * this.timeScale;
+        this.time += dt;
+        if (this.current) {
+          this.applyPendingRatio();
+          this.applyViewInset(dt);
+          this.current.update(dt, this.time);
+          if (this.current.render) this.current.render(this.renderer);
+          else if (this.retro.enabled) this.retro.render(this.renderer, this.current.scene, this.current.camera);
+          else this.renderer.render(this.current.scene, this.current.camera);
+        }
+        this.onFrame?.(dt);
+        this.adaptResolution(this.timer.getDelta());
+      } catch (e) {
+        reportError(e, 'frame');
+      }
     };
     requestAnimationFrame(loop);
   }

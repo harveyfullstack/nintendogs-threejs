@@ -8,5 +8,8 @@ if (params.has('viewer')) {
   if (!load) document.body.textContent = 'No test page ' + key + '. Available: ' + Object.keys(tests).join(', ');
   else load().then((m: any) => m.default ? m.default(params) : m.run(params));
 } else {
-  import('./game/boot').then((m) => m.boot());
+  import('./game/boot').then((m) => m.boot()).catch((e) => {
+    console.error(e);
+    document.body.textContent = "Sorry, the game couldn't load. Check your connection and reload the page.";
+  });
 }

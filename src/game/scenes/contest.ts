@@ -77,7 +77,9 @@ function showResults(game: Game, kind: ContestKind, cls: number, you: Result, ot
 function banner(game: Game) {
   const el = h('div', { class: 'mode-banner top show' });
   const score = h('div', { class: 'panel score-box' });
-  game.overlay.layer.append(el, score);
+  // you can always walk away from a contest (no prize, no penalty)
+  const leave = h('button', { class: 'btn small corner-tl', onclick: () => game.go('gym') }, 'Leave');
+  game.overlay.layer.append(el, score, leave);
   return { el, score };
 }
 
@@ -105,6 +107,10 @@ async function discContest(game: Game, cls: number): Promise<GameScene> {
   let throws = 0;
   let total = 0;
   let waiting = false;
+  /** where the current throw is at, timed so the contest can never wait forever */
+  let phase: 'aim' | 'flight' | 'return' | 'over' = 'aim';
+  let phaseT = 0;
+  const setPhase = (p: typeof phase) => { phase = p; phaseT = 0; };
   const ui = banner(game);
   const discKind = game.save.inventory.goldDisc > 0 ? 'goldDisc' : 'frisbee';
   const brain = new Brain(actor, d, {
@@ -130,13 +136,13 @@ async function discContest(game: Game, cls: number): Promise<GameScene> {
       sound.sfx('applause', { volume: air ? 0.8 : 0.3 });
       game.overlay.toast(air ? `Great catch! ${dist.toFixed(1)} m × 2 = ${pts}` : `${dist.toFixed(1)} m = ${pts}`, air);
       updateUi();
+      setPhase('return');
     },
     releaseToy: (toy, a) => {
       const at = a.mouthWorld();
       a.drop();
       toys.dropAt(toy as any, at);
-      if (throws >= 3) setTimeout(finish, 800);
-      else setTimeout(nextThrow, 600);
+      if (phase === 'return') afterThrow();
     },
   });
   brain.enabled = false;
@@ -144,12 +150,19 @@ async function discContest(game: Game, cls: number): Promise<GameScene> {
   const play = new PlayController(game, camera, [pd], toys, scene);
   play.throwScale = discKind === 'goldDisc' ? 5.5 : 4.6;
   const origThrown = brain.toyThrown.bind(brain);
-  brain.toyThrown = (toy) => { waiting = true; origThrown(toy); };
+  brain.toyThrown = (toy) => { waiting = true; setPhase('flight'); origThrown(toy); };
+  const afterThrow = () => {
+    if (phase === 'over') return;
+    if (throws >= 3) { setPhase('over'); setTimeout(finish, 800); }
+    else { setPhase('aim'); setTimeout(nextThrow, 600); }
+  };
   const updateUi = () => {
     ui.el.textContent = throws < 3 ? `Throw ${throws + 1} of 3 — flick the disc down the field!` : 'Finished!';
     ui.score.textContent = `Score: ${total}`;
   };
   const nextThrow = () => {
+    if (phase === 'over') return;
+    setPhase('aim');
     for (const t of [...toys.list]) toys.remove(t);
     play.holdToy(discKind as any);
     actor.rig.setPose('stand', 6);
@@ -174,6 +187,26 @@ async function discContest(game: Game, cls: number): Promise<GameScene> {
       toys.update(dt);
       play.update(dt);
       const disc = toys.list[0];
+      phaseT += dt;
+      if (phase === 'aim' && phaseT > 1 && disc && !disc.inHand && !disc.carrier && disc.resting) {
+        // let go without a flick: back into your hand rather than left lying on the grass
+        play.holdToy(discKind as any);
+        game.overlay.toast('Flick the disc up the screen to throw it!');
+        phaseT = 0;
+      } else if (phase === 'flight' && (phaseT > 16 || (phaseT > 2 && brain.activity !== 'chase'))) {
+        // the pup never got to it (or gave up): a miss, and on to the next throw
+        waiting = false;
+        throws++;
+        brain.call();
+        game.overlay.toast('The disc got away! No points this time.');
+        updateUi();
+        afterThrow();
+      } else if (phase === 'return' && phaseT > 16) {
+        // caught it but won't bring it back: call the pup off and carry on
+        brain.call();
+        actor.drop();
+        afterThrow();
+      }
       const focus = disc && !disc.inHand ? disc.object.getWorldPosition(new THREE.Vector3()).lerp(actor.headWorld(), 0.5) : actor.headWorld();
       // move the camera down the field to keep the action in view
       const ahead = Math.max(0, focus.z - line.z - 6);
@@ -230,6 +263,11 @@ async function obedienceContest(game: Game, cls: number): Promise<GameScene> {
   let timeLeft = 0;
   let score = 0;
   let awaiting: TrickId | 'come' | null = null;
+  /** judge's command number, so a late callback can't score a command twice */
+  let round = 0;
+  let settled = true;
+  /** seconds the pup has been busy answering (-1: not answering); a stalled answer times out */
+  let answerT = -1;
   const ui = banner(game);
   const timer = h('div', { class: 'bar contest-timer' }, h('i', { style: { width: '100%', background: '#ff9b30' } }));
   game.overlay.layer.append(timer);
@@ -239,6 +277,9 @@ async function obedienceContest(game: Game, cls: number): Promise<GameScene> {
     idx++;
     if (idx >= list.length) return finish();
     const c = list[idx];
+    round++;
+    settled = false;
+    answerT = -1;
     awaiting = c;
     timeLeft = 9;
     if (c === 'come') {
@@ -252,7 +293,10 @@ async function obedienceContest(game: Game, cls: number): Promise<GameScene> {
     }
     sound.sfx('countdown');
   };
-  const award = (ok: boolean) => {
+  const award = (ok: boolean, r = round) => {
+    if (r !== round || settled) return;
+    settled = true;
+    answerT = -1;
     const bonus = Math.round(timeLeft * 0.6);
     if (ok) { score += 10 + bonus; sound.sfx('applause', { volume: 0.5 }); game.overlay.toast(`Well done! +${10 + bonus}`); }
     else { sound.sfx('error'); game.overlay.toast('No points…'); }
@@ -266,8 +310,10 @@ async function obedienceContest(game: Game, cls: number): Promise<GameScene> {
     const t = normalizeWords(text);
     if (awaiting === 'come') {
       if (similarity(t, d.name) > 0.62 && Math.random() < 0.4 + d.nameLearned * 0.6) {
-        actor.goTo(playerSpot, { speed: actor.size * 4, arrive: 0.12, faceAfter: camera.position, onArrive: () => { actor.rig.setPose('sit', 5); brain.posture = 'sit'; award(true); } });
+        const r = round;
+        actor.goTo(playerSpot, { speed: actor.size * 4, arrive: 0.12, faceAfter: camera.position, onArrive: () => { actor.rig.setPose('sit', 5); brain.posture = 'sit'; award(true, r); } });
         awaiting = null;
+        answerT = 0;
       } else brain.confused();
       return;
     }
@@ -283,9 +329,11 @@ async function obedienceContest(game: Game, cls: number): Promise<GameScene> {
     const want = awaiting;
     if (Math.random() > 0.6 + p.mastery * 0.38) { brain.confused(); return; }
     awaiting = null;
+    answerT = 0;
+    const r = round;
     brain.performTrick(best, () => {
       p.mastery = Math.min(1, p.mastery + 0.04);
-      award(best === want);
+      award(best === want, r);
     });
   }, { solo: true, notify: (t) => game.overlay.toast(t) });
   game.overlay.layer.append(say.el);
@@ -308,6 +356,10 @@ async function obedienceContest(game: Game, cls: number): Promise<GameScene> {
         timeLeft -= dt;
         (timer.firstChild as HTMLElement).style.width = Math.max(0, timeLeft / 9) * 100 + '%';
         if (timeLeft <= 0) award(false);
+      } else if (answerT >= 0) {
+        // the pup's answer got interrupted (or it never made it over): no points, next command
+        answerT += dt;
+        if (answerT > 10) award(false);
       }
       brain.update(dt);
       actor.update(dt);
@@ -352,6 +404,9 @@ async function agilityContest(game: Game, cls: number): Promise<GameScene> {
   let time = 0;
   let faults = 0;
   let busy = false;
+  /** seconds on the current obstacle, and which attempt it is (so a late callback can't count twice) */
+  let busyT = 0;
+  let attempt = 0;
   const pointer = new THREE.Vector3();
   let holding = false;
   const ray = new THREE.Raycaster();
@@ -385,7 +440,9 @@ async function agilityContest(game: Game, cls: number): Promise<GameScene> {
 
   const perform = (o: AgilityObstacle) => {
     busy = true;
-    const done1 = () => { busy = false; k++; sound.sfx('pop'); if (k >= obs.length) finish(); };
+    busyT = 0;
+    const mine = ++attempt;
+    const done1 = () => { if (mine !== attempt || !busy) return; busy = false; k++; sound.sfx('pop'); if (k >= obs.length) finish(); };
     const ex = exit(o);
     switch (o.kind) {
       case 'hurdle':
@@ -451,6 +508,21 @@ async function agilityContest(game: Game, cls: number): Promise<GameScene> {
       const o = obs[Math.min(k, obs.length - 1)];
       marker.position.copy(o.position).add(new THREE.Vector3(0, 0.9 + Math.sin(t * 4) * 0.08, 0));
       marker.visible = !done;
+      if (busy && !done) {
+        busyT += dt;
+        if (busyT > 8) {
+          // stuck on an obstacle: pop the pup out the far side and carry on
+          attempt++;
+          busy = false;
+          actor.jump = null;
+          actor.stop();
+          actor.rig.rootLift = 0;
+          const ex = exit(obs[Math.min(k, obs.length - 1)]);
+          actor.place(ex.x, ex.z, actor.heading);
+          k++;
+          if (k >= obs.length) finish();
+        }
+      }
       if (!busy && !done) {
         if (holding) actor.goTo(pointer, { speed: baseSpeed, arrive: 0.15 });
         else actor.stop();

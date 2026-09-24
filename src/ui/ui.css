@@ -31,6 +31,7 @@
 @supports (height: 100dvh) { :root { --vh: 100dvh; } }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 html, body {
   margin: 0; height: 100%; overflow: hidden; background: #cfe9f6; font-family: var(--body); color: var(--ink);
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
@@ -248,8 +249,10 @@ a.btn { text-decoration: none; }
 .press.still { animation: none; font-size: 17px; }
 @keyframes blinktext { from { opacity: .35; } }
 
-.loading { position: absolute; inset: 0; background: #cfe9f6; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; font-family: var(--round); font-size: 22px; color: var(--blue-dark); z-index: 50; transition: opacity .4s; }
-.loading .paw { font-size: 44px; animation: pawhop .6s ease-in-out infinite alternate; }
+.boot-loading { position: absolute; inset: 0; background: #cfe9f6; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; font-family: var(--round); font-size: 22px; color: var(--blue-dark); z-index: 50; transition: opacity .4s; }
+.boot-loading .paw { font-size: 44px; animation: pawhop .6s ease-in-out infinite alternate; }
+.boot-loading { padding: 24px; text-align: center; }
+.boot-loading small { font-family: var(--body); font-size: 13px; color: var(--muted); max-width: 32em; }
 @keyframes pawhop { to { transform: translateY(-12px) rotate(10deg); } }
 
 .speech-bubble { position: absolute; background: #fff; border-radius: 16px; padding: 8px 14px; font-family: var(--round); font-size: 17px; box-shadow: var(--shadow); transform: translate(-50%, -100%); white-space: nowrap; pointer-events: none; }
@@ -276,15 +279,44 @@ a.btn { text-decoration: none; }
 .cursor-pet { cursor: pointer; }
 
 /* ---------- scene screens ---------- */
+/* kennel: breed list + puppy card (on portrait phones they stack at the bottom, see below) */
+.kennel-ui { display: contents; }
 .kennel-list { position: absolute; left: calc(var(--sal) + 14px); top: calc(var(--sat) + 14px); bottom: calc(var(--sab) + 14px); width: 300px; padding: 16px; animation: none; display: flex; flex-direction: column; }
 .kennel-list h2 { font-size: 24px; }
 .kennel-list .intro { font-size: 14px; margin-top: -6px; }
 .kennel-breeds { overflow: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 4px 4px 4px 0; overscroll-behavior: contain; }
 .kennel-breeds .card { text-align: left; padding: 10px 12px; flex: none; }
 .kennel-breeds .blurb { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.kennel-info { position: absolute; right: calc(var(--sar) + 14px); bottom: calc(var(--sab) + 14px); width: 320px; padding: 16px; animation: none; }
-.kennel-info h2 { font-size: 22px; }
-.kennel-info .price { font-size: 22px; font-family: var(--round); color: #2c9b4a; }
+.kennel-info { position: absolute; right: calc(var(--sar) + 14px); bottom: calc(var(--sab) + 14px); width: 340px; padding: 16px; animation: none; }
+.pick-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.kennel-info h2 { font-size: 22px; margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kennel-info .wallet { font-family: var(--round); font-weight: 600; font-size: 18px; color: #2c9b4a; flex: none; }
+.kennel-info .blurb { display: none; font-size: 13px; color: var(--muted); margin: 2px 0 0; line-height: 1.3; }
+.kennel-info .pick-hint { font-size: 14px; margin: 4px 0 10px; }
+.kennel-info .pick-hint.busy { color: var(--blue-dark); font-weight: 800; }
+.pick-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+.pup-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; flex: 1 1 240px; }
+.pup-chip {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0; min-height: 76px; padding: 8px 4px;
+  border-radius: 14px; background: #fff; border: 3px solid var(--blue-light); color: var(--ink); cursor: pointer; font-family: var(--round);
+  transition: border-color .15s, background .15s, transform .1s;
+}
+.pup-chip:active { transform: scale(.96); }
+.pup-chip .swatch { width: 28px; height: 28px; border-radius: 50%; background: #e8edf2; box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .12); }
+.pup-chip .pup-name { font-weight: 600; font-size: 14px; line-height: 1.1; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pup-chip .pup-meta { font-family: var(--body); font-size: 12px; font-weight: 800; color: var(--muted); white-space: nowrap; }
+.pup-chip .male { color: #3d8fe0; }
+.pup-chip .female { color: #f0609a; }
+.pup-chip.selected { border-color: var(--orange); background: #fff6ea; box-shadow: 0 0 0 3px rgba(255, 155, 48, .3); }
+.pup-chip.pending { cursor: default; opacity: .75; }
+.pup-chip.pending .swatch { animation: shimmer .8s ease-in-out infinite alternate; }
+@keyframes shimmer { from { opacity: .3; } }
+.adopt-btn { flex: 1 0 100%; }
+.pup-marker { position: absolute; transform: translate(-50%, -100%); pointer-events: none; }
+.pup-marker svg { display: block; width: 28px; height: 28px; fill: var(--orange); stroke: #fff; stroke-width: 2; stroke-linejoin: round; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .25)); animation: markerbob .6s ease-in-out infinite alternate; }
+@keyframes markerbob { to { transform: translateY(-6px); } }
+.form-error { color: var(--red); font-weight: 800; font-size: 14px; min-height: 1.3em; margin: 8px 0 0; }
+.form-error:empty { margin: 0; min-height: 0; }
 .corner-tr { position: absolute; right: calc(var(--sar) + 14px); top: calc(var(--sat) + 14px); }
 .corner-tl { position: absolute; left: calc(var(--sal) + 14px); top: calc(var(--sat) + 14px); }
 .corner-br { position: absolute; right: calc(var(--sar) + 20px); bottom: calc(var(--sab) + 20px); }
@@ -393,10 +425,12 @@ a.btn { text-decoration: none; }
   .kennel-list .intro { font-size: 13px; margin: 0 0 6px; }
   .kennel-breeds .card { padding: 8px 10px; }
   .kennel-info { padding: 12px 14px; }
-  .kennel-info h2 { font-size: 19px; margin: 0; }
-  .kennel-info p { margin: 2px 0; }
-  .kennel-info .price { font-size: 19px; }
-  .kennel-info .actions { margin-top: 8px; }
+  .kennel-info h2 { font-size: 19px; }
+  .kennel-info .wallet { font-size: 16px; }
+  .kennel-info .pick-hint { font-size: 13px; margin: 3px 0 8px; }
+  .pup-chip { min-height: 68px; padding: 6px 4px; }
+  /* dialogs with a text field sit high, clear of the on-screen keyboard */
+  .backdrop:has(.textfield) { align-items: flex-start; padding-top: calc(var(--sat) + 9vh); }
 
   .walk-bar { padding: 8px 14px; gap: 10px; width: min(420px, calc(100vw - var(--sal) - var(--sar) - 24px)); }
   .walk-bar .label { font-size: 15px; }
@@ -445,11 +479,17 @@ a.btn { text-decoration: none; }
   #ui:has(.mode-banner.show:not(.top)) .toasts { top: calc(var(--sat) + 164px); }
   .option-grid { grid-template-columns: 1fr; gap: 8px; }
 
-  .kennel-list { left: 0; right: 0; bottom: 0; top: auto; width: auto; height: calc(var(--vh) * .4); border-radius: 22px 22px 0 0; padding: 12px 14px calc(8px + var(--sab)); border-bottom: none; max-width: none; max-height: none; }
-  .kennel-list .intro { display: none; }
-  .kennel-info { left: calc(var(--sal) + 10px); right: calc(var(--sar) + 10px); width: auto; bottom: calc(var(--vh) * .4 + 10px); display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 10px; }
-  .kennel-info > * { grid-column: 1; }
-  .kennel-info .actions { grid-column: 2; grid-row: 1 / span 3; margin: 0; }
+  /* puppy card above a sideways-scrolling strip of breeds */
+  .kennel-ui { display: flex; flex-direction: column; position: absolute; left: 0; right: 0; bottom: 0; }
+  .kennel-ui > .panel { position: static; width: auto; max-width: none; max-height: none; overflow: visible; }
+  .kennel-info { margin: 0 calc(var(--sar) + 10px) 10px calc(var(--sal) + 10px); }
+  .kennel-info .blurb { display: block; }
+  .kennel-list { border-radius: 22px 22px 0 0; border-bottom: none; padding: 10px 0 calc(10px + var(--sab)); }
+  .kennel-list h2, .kennel-list .intro { display: none; }
+  .kennel-breeds { flex-direction: row; overflow-x: auto; overflow-y: hidden; gap: 8px; padding: 2px calc(var(--sar) + 12px) 4px calc(var(--sal) + 12px); touch-action: pan-x; scrollbar-width: none; }
+  .kennel-breeds::-webkit-scrollbar { display: none; }
+  .kennel-breeds .card { width: 150px; }
+  .kennel-breeds .blurb { display: none; }
 }
 
 /* ---- phone, landscape (short screens) ---- */
@@ -486,15 +526,16 @@ a.btn { text-decoration: none; }
   .logo { font-size: min(15vw, 120px, 22vh); top: calc(5vh + var(--sat)); }
   .logo small { font-size: 13px; margin-top: 8px; }
 
-  .kennel-list { width: 250px; padding: 12px; left: calc(var(--sal) + 10px); top: calc(var(--sat) + 10px); bottom: calc(var(--sab) + 10px); max-height: none; }
+  .kennel-list { width: min(250px, 36vw); padding: 12px; left: calc(var(--sal) + 10px); top: calc(var(--sat) + 10px); bottom: calc(var(--sab) + 10px); max-height: none; }
   .kennel-list .intro { font-size: 12px; }
   .kennel-breeds .blurb { display: none; }
   /* the puppy card runs along the bottom, beside the breed list */
-  .kennel-info { width: auto; left: calc(var(--sal) + 270px); right: calc(var(--sar) + 10px); bottom: calc(var(--sab) + 10px); max-width: 520px; margin-left: auto; display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 14px; padding: 10px 14px; }
-  .kennel-info h2 { grid-column: 1; grid-row: 1; }
-  .kennel-info p:not(.price) { grid-column: 1; grid-row: 2; }
-  .kennel-info .price { grid-column: 2; grid-row: 1 / span 2; margin: 0; }
-  .kennel-info .actions { grid-column: 3; grid-row: 1 / span 2; margin: 0; }
+  .kennel-info { width: auto; left: calc(var(--sal) + min(250px, 36vw) + 20px); right: calc(var(--sar) + 10px); bottom: calc(var(--sab) + 10px); max-width: 560px; max-height: none; margin-left: auto; padding: 10px 12px; }
+  .kennel-info .pick-hint { font-size: 12px; margin: 1px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pup-chip { min-height: 60px; }
+  .pup-chip .swatch { width: 22px; height: 22px; }
+  .adopt-btn { flex: 1 0 150px; }
+  .backdrop:has(.textfield) { padding-top: calc(var(--sat) + 8px); }
 
   .walkmap { grid-template-areas: 'map head' 'map actions'; grid-template-columns: auto minmax(150px, 220px); grid-template-rows: 1fr auto; column-gap: 14px; }
   .walkmap .head { flex-direction: column; align-items: flex-start; align-self: start; }

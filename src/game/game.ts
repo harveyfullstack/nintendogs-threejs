@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { DogActor } from '../dog/actor';
 import { getBreed } from '../dog/breeds';
 import { accessoryFit } from '../dog/fit';
+import { touchUI } from '../ui/device';
+import { h } from '../ui/dom';
+import { describeError, reportError } from '../ui/errors';
 import { Overlay } from '../ui/overlay';
 import { loadIcons, loadProps, props } from '../world/loaders';
 import type { Accessory } from '../world/types';
@@ -37,6 +40,9 @@ export class Game {
 
   get renderer() { return this.engine.renderer; }
   get quality() { return this.save?.settings.quality ?? 1; }
+  /** Detail for puppies you only look at (title, kennel). Generating a dog blocks the main
+   * thread for a second or more on a phone, so those get a lighter mesh there. */
+  get previewQuality() { return Math.min(1, this.quality, touchUI ? 0.8 : 1); }
 
   async preload() {
     await Promise.all([loadProps(), loadIcons()]);
@@ -49,6 +55,7 @@ export class Game {
   async go(name: string, args?: any) {
     if (this.busy) return;
     this.busy = true;
+    let failure: unknown = null;
     try {
       const f = this.scenes[name];
       if (!f) throw new Error('unknown scene ' + name);
@@ -68,9 +75,27 @@ export class Game {
       // let a frame render before revealing
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       await this.overlay.fadeIn();
+    } catch (e) {
+      failure = e;
     } finally {
       this.busy = false;
     }
+    if (failure) await this.sceneFailed(name, args, failure);
+  }
+
+  /** A scene couldn't load: never leave the player on a blank screen, offer a way on. */
+  private async sceneFailed(name: string, args: any, e: unknown) {
+    reportError(e, `couldn't open ${name}`);
+    this.overlay.closeModals();
+    await this.overlay.fadeIn();
+    const fallback = name !== 'home' && this.save?.dogs.length ? 'home' : name !== 'title' ? 'title' : null;
+    const m = this.overlay.modal(h('div', { class: 'panel', style: { width: 'min(440px, 92vw)', textAlign: 'center' } },
+      h('h2', null, 'Oops!'),
+      h('p', null, "That didn't load properly."),
+      h('p', { style: { fontSize: '13px', color: '#7b8193' } }, describeError(e).slice(0, 160)),
+      h('div', { class: 'actions', style: { justifyContent: 'center' } },
+        fallback ? h('button', { class: 'btn', onclick: () => { m.close(); this.go(fallback); } }, fallback === 'home' ? 'Go home' : 'Title screen') : null,
+        h('button', { class: 'btn primary', onclick: () => { m.close(); this.go(name, args); } }, 'Try again'))), { dismiss: false });
   }
 
   persist(immediate = false) {

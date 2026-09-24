@@ -26,7 +26,7 @@ export async function createTitle(game: Game): Promise<GameScene> {
   const fake = newDog('Pup', 'labrador', 'yellow', 'male');
   for (const [i, [id, ci]] of picks.entries()) {
     const breed = getBreed(id);
-    const actor = new DogActor(breed, breed.coats[ci], Math.min(1, game.quality));
+    const actor = new DogActor(breed, breed.coats[ci], game.previewQuality);
     actor.bounds = room.bounds;
     actor.obstacles = room.obstacles;
     actor.place(center.x + (i - 1) * 0.6, center.z + (i === 1 ? 0.3 : 0), Math.PI + (i - 1) * 0.5);

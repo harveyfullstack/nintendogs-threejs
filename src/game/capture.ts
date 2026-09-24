@@ -31,6 +31,8 @@ export function renderToDataURL(
   renderer.setRenderTarget(prev);
   renderer.setClearColor(prevClear, prevAlpha);
   rt.dispose();
+  // GPUs that can't read back float targets leave the buffer empty: report that, don't draw black
+  if (!buf.some((v) => v !== 0)) return '';
   const exposure = renderer.toneMappingExposure / 0.6;
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;

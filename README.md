@@ -22,6 +22,7 @@ The game plays on phones and tablets in portrait or landscape, with touch contro
 
 ### How to play
 
+- **Adopt** a puppy at the Kennel: pick a breed and its three puppies come out. Choose one by tapping it in the pen or with its button on the puppy card, then press *Take me home!* and give it a name.
 - **Pet** your puppy by stroking it with the mouse or your finger. It loves chin, head and belly rubs, and lots of belly rubs make it roll over.
 - **Lead** it: click (or touch) and hold on the floor and it follows your hand.
 - **Call** it: hold 🎤 (or the Space bar) and say its name, or type into the box. On touch screens, tap 🎤 and speak, or tap ⌨️ to type. Voice uses the Web Speech API (Chrome, Safari).
@@ -53,9 +54,22 @@ src/game/     game loop, scenes, save data, items, tricks, voice, audio
 src/world/    rooms, town, park, contest venues, props and accessories
 src/ui/       DS-style HUD and menus
 src/tests/    stand-alone test pages (open /?test=<name>)
+e2e/          Playwright end-to-end tests (npm run test:e2e)
 ```
 
 Handy URLs while developing: `/?viewer=shiba,pug` (model viewer), `/?quickstart=corgi` (skip straight to a home with that breed), `/?test=room`, `/?test=town`, `/?test=audio`.
+
+## Tests
+
+End-to-end tests play the game in Chromium emulating phones (iPhone in portrait and landscape, a small iPhone, an Android phone) and a desktop, with real touch input: a new player adopting a puppy, everything on the home screen, walks, shops, contests, the bath, the park and the kennel.
+
+```sh
+npx playwright install chromium   # first time only
+npm run test:e2e                  # every device
+npx playwright test --project=iphone e2e/first-run.spec.ts
+```
+
+Without a GPU, WebGL runs in software and the game only manages a frame or two per second, so a full run takes a while. The tests fast-forward the simulation rather than wait for the puppies.
 
 ## Credits
 
