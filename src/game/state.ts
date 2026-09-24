@@ -126,11 +126,50 @@ export function loadSave(): SaveData | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as SaveData;
-    if (s.version !== 1) return null;
-    return s;
+    if (!s || typeof s !== 'object' || s.version !== 1) return null;
+    return normalizeSave(s);
   } catch {
     return null;
   }
+}
+
+const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+const obj = <T extends object>(v: unknown, fallback: T): T => (v && typeof v === 'object' && !Array.isArray(v) ? (v as T) : fallback);
+
+/** Fill in anything missing or broken (older versions, a half-written save) so no scene trips over it. */
+export function normalizeSave(s: SaveData): SaveData {
+  const d = newSave(typeof s.ownerName === 'string' ? s.ownerName : '');
+  const dogs = (Array.isArray(s.dogs) ? s.dogs : [])
+    .filter((x) => x && typeof x === 'object' && typeof x.id === 'string' && typeof x.breedId === 'string' && typeof x.coatId === 'string')
+    .map((x) => {
+      const base = newDog(typeof x.name === 'string' && x.name ? x.name : 'Pup', x.breedId, x.coatId, x.sex === 'female' ? 'female' : 'male');
+      const dog: DogSave = { ...base, ...x, sex: base.sex, name: base.name };
+      for (const k of ['hunger', 'thirst', 'clean', 'energy', 'affection', 'mood', 'nameLearned', 'lastWalk', 'walks', 'walkDistance', 'trainerPoints', 'playful', 'calm', 'adoptedAt'] as const) {
+        dog[k] = num(x[k], base[k]);
+      }
+      dog.tricks = obj(x.tricks, {});
+      dog.contests = { ...base.contests, ...obj(x.contests, base.contests) };
+      return dog;
+    });
+  const out: SaveData = {
+    ...d,
+    ...s,
+    money: num(s.money, d.money),
+    ownerPoints: num(s.ownerPoints, d.ownerPoints),
+    dogs,
+    inventory: obj(s.inventory, d.inventory),
+    collectibles: obj(s.collectibles, d.collectibles),
+    ownedRooms: Array.isArray(s.ownedRooms) && s.ownedRooms.length ? s.ownedRooms : d.ownedRooms,
+    roomTheme: typeof s.roomTheme === 'string' ? s.roomTheme : d.roomTheme,
+    bowls: { ...d.bowls, ...obj(s.bowls, d.bowls) },
+    photos: Array.isArray(s.photos) ? s.photos.filter((p) => p && typeof p.dataUrl === 'string') : [],
+    settings: { ...d.settings, ...obj(s.settings, d.settings) },
+    lastUpdate: num(s.lastUpdate, d.lastUpdate),
+    createdAt: num(s.createdAt, d.createdAt),
+    day: num(s.day, 0),
+  };
+  if (!dogs.some((x) => x.id === out.activeDog)) out.activeDog = dogs[0]?.id ?? '';
+  return out;
 }
 
 let saveTimer = 0;
@@ -154,7 +193,7 @@ export function writeSave(s: SaveData, immediate = false) {
 }
 
 export function deleteSave() {
-  localStorage.removeItem(KEY);
+  try { localStorage.removeItem(KEY); } catch { /* storage unavailable: nothing to delete */ }
 }
 
 const HOUR = 3600 * 1000;

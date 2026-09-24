@@ -277,6 +277,8 @@ export function renderIcon(renderer: THREE.WebGLRenderer, object: THREE.Object3D
       renderer.render(s.post.scene, s.post.camera);
       const buf = new Uint8Array(px * px * 4);
       renderer.readRenderTargetPixels(t.ldr, 0, 0, px, px, buf);
+      // nothing came back (e.g. no half-float rendering on this GPU): '' means "use the fallback"
+      if (!buf.some((v) => v !== 0)) return '';
 
       // flip rows into a canvas, then downsample for smooth edges
       const big = document.createElement('canvas');

@@ -164,8 +164,8 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
     ctx.fillText('🐕', dx, dz);
     const used = plan.nodes.length + Math.max(0, returnNodes().length - 1);
     info.textContent = plan.nodes.length
-      ? `Route: ${used}/${MAX_EDGES} blocks · ${tap} streets to extend, then press Go!`
-      : `${Tap} the streets next to your house to plan a walk for ${dog.name}.`;
+      ? `Route: ${used}/${MAX_EDGES} blocks · ${tap} more streets, or press Go!`
+      : `${Tap} a street to plan a walk for ${dog.name}. The route follows the roads.`;
   };
   function line(x0: number, y0: number, x1: number, y1: number) { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); }
 
@@ -189,6 +189,20 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
     return pts;
   };
 
+  /** Streets needed to get home from a corner. */
+  const homeLen = (n: Node) => Math.min(shortestPath(n, ha).length, shortestPath(n, hb).length) - 1;
+  /** Walk one street to a neighbouring corner; walking back along the route undoes a step. */
+  const step = (n: Node): boolean => {
+    if (plan.nodes.length >= 2) {
+      const prev = plan.nodes[plan.nodes.length - 2];
+      if (prev[0] === n[0] && prev[1] === n[1]) { plan.nodes.pop(); sound.sfx('back'); return true; }
+    }
+    if (plan.nodes.length + 1 + Math.max(0, homeLen(n)) > MAX_EDGES) { game.overlay.toast("That's too far for today!"); return false; }
+    plan.nodes.push(n);
+    sound.sfx('click');
+    return true;
+  };
+  /** Dragging: follow the finger one street at a time. */
   const addNear = (wx: number, wz: number) => {
     const last: Node | null = plan.nodes.length ? plan.nodes[plan.nodes.length - 1] : null;
     const cands: Node[] = last ? neighbors(last) : [ha, hb];
@@ -199,15 +213,27 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
       if (d < bd) { bd = d; best = c; }
     }
     if (!best || bd > P * 0.75) return;
-    // undo when going back to the previous node
-    if (plan.nodes.length >= 2) {
-      const prev = plan.nodes[plan.nodes.length - 2];
-      if (prev[0] === best[0] && prev[1] === best[1]) { plan.nodes.pop(); sound.sfx('back'); draw(); return; }
-    }
-    const used = plan.nodes.length + 1 + Math.max(0, shortestPath(best, ha).length - 1);
-    if (used > MAX_EDGES) { game.overlay.toast("That's too far for today!"); return; }
-    plan.nodes.push(best);
-    sound.sfx('click');
+    step(best);
+    draw();
+  };
+  /** Tapping: walk from the end of the route to the corner nearest the tap, along the streets. */
+  const routeTo = (wx: number, wz: number) => {
+    const target: Node = [
+      THREE.MathUtils.clamp(Math.round(wx / P), 0, TOWN.cols),
+      THREE.MathUtils.clamp(Math.round(wz / P), 0, TOWN.rows),
+    ];
+    const last = plan.nodes[plan.nodes.length - 1];
+    let path: Node[];
+    if (!last) {
+      // leave home by whichever end of our street is on the way
+      const a = shortestPath(ha, target), b = shortestPath(hb, target);
+      path = a.length <= b.length ? a : b;
+    } else if (last[0] === target[0] && last[1] === target[1]) {
+      // a tap right by the dog: take one street towards it
+      addNear(wx, wz);
+      return;
+    } else path = shortestPath(last, target).slice(1);
+    for (const n of path) if (!step(n)) break;
     draw();
   };
   let dragging = false;
@@ -216,7 +242,7 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
     const r = cv.getBoundingClientRect();
     return fromC(((e.clientX - r.left) / r.width) * cv.width, ((e.clientY - r.top) / r.height) * cv.height);
   };
-  cv.addEventListener('pointerdown', (e) => { dragging = true; const [x, z] = pos(e); addNear(x, z); });
+  cv.addEventListener('pointerdown', (e) => { dragging = true; const [x, z] = pos(e); routeTo(x, z); });
   cv.addEventListener('pointermove', (e) => {
     if (!dragging) return;
     const [x, z] = pos(e);
@@ -373,7 +399,8 @@ export async function createWalk(game: Game, args: { nodes: Node[]; presents: Wa
     if (poi.kind === 'home') continue;
     const e = poiEntrance(poi);
     const r = sAt(e);
-    if (r.dist < TOWN.street * 0.6 && r.s > 8 && r.s < length - 8) events.push({ s: r.s, kind: 'poi', poi });
+    // offered from either side of the street: the route on the map runs right past it
+    if (r.dist < TOWN.street * 0.9 && r.s > 8 && r.s < length - 8) events.push({ s: r.s, kind: 'poi', poi });
   }
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
   events.push({ s: rnd(0.25, 0.6) * length, kind: 'poop' });

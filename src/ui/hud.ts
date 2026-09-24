@@ -198,8 +198,17 @@ export class SayBox {
 
 export { iconBtn };
 
-/** Render a close-up of a dog's face into a data URL for the HUD. */
+/** Render a close-up of a dog's face into a data URL for the HUD ('' if the GPU can't). */
 export function renderPortrait(renderer: THREE.WebGLRenderer, scene: THREE.Scene, actor: DogActor, size = 160): string {
+  try {
+    return portrait(renderer, scene, actor, size);
+  } catch (e) {
+    console.warn('portrait failed', e);
+    return '';
+  }
+}
+
+function portrait(renderer: THREE.WebGLRenderer, scene: THREE.Scene, actor: DogActor, size: number): string {
   const head = actor.headWorld();
   const d = actor.model.design.dims;
   const fwd = new THREE.Vector3(Math.sin(actor.heading), 0, Math.cos(actor.heading));

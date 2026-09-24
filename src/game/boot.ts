@@ -1,6 +1,7 @@
 import '../ui/ui.css';
 import { BREEDS } from '../dog/breeds';
 import { installTouchGuards } from '../ui/device';
+import { describeError, installErrorReporting } from '../ui/errors';
 import { h } from '../ui/dom';
 import { Game } from './game';
 import { createBath } from './scenes/bath';
@@ -18,10 +19,28 @@ import { TRICKS } from './tricks';
 
 export async function boot() {
   installTouchGuards();
-  const app = document.getElementById('app')!;
-  const loading = h('div', { class: 'loading' }, h('div', { class: 'paw' }, '🐾'), 'Loading…');
+  const loading = h('div', { class: 'boot-loading' }, h('div', { class: 'paw' }, '🐾'), 'Loading…');
   document.body.append(loading);
+  try {
+    await start(loading);
+  } catch (e) {
+    // don't sit on "Loading…" forever: say what went wrong and offer a retry
+    console.error('boot failed', e);
+    const msg = describeError(e);
+    loading.style.opacity = '1';
+    loading.replaceChildren(
+      h('div', { class: 'paw' }, '🐾'),
+      /webgl/i.test(msg) ? "Your browser couldn't start 3D graphics (WebGL 2 is needed)." : "Sorry, the game couldn't start.",
+      h('small', null, msg.slice(0, 200)),
+      h('button', { class: 'btn primary', onclick: () => location.reload() }, 'Try again'),
+    );
+  }
+}
+
+async function start(loading: HTMLElement) {
+  const app = document.getElementById('app')!;
   const game = new Game(app);
+  installErrorReporting((text) => game.overlay.toast(text));
   (window as any).game = game;
   (window as any).__sound = sound;
   game.register('title', createTitle);
