@@ -34,9 +34,9 @@ function spawn(): Slot | null {
       }
       pump();
     };
-    worker.onerror = (e) => {
-      // the worker couldn't start (or crashed): build this and everything after on the main thread
-      e.preventDefault?.();
+    // the worker couldn't start, crashed or sent something unreadable: build this and
+    // everything after on the main thread
+    const broken = () => {
       workersBroken = true;
       const job = slot.job;
       slot.job = null;
@@ -45,6 +45,8 @@ function spawn(): Slot | null {
       for (const s of [...slots]) if (!s.job) retire(s);
       pump();
     };
+    worker.onerror = (e) => { e.preventDefault?.(); broken(); };
+    worker.onmessageerror = broken;
     slots.push(slot);
     return slot;
   } catch {

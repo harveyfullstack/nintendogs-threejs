@@ -26,5 +26,8 @@ export function physicalMaterial(o: THREE.MeshPhysicalMaterialParameters = {}): 
   for (const [k, v] of Object.entries(o)) if (!PHYSICAL_ONLY.has(k)) std[k] = v;
   // a clear coat reads as a sharper highlight: keep a hint of it
   if (o.clearcoat && typeof std.roughness === 'number') std.roughness = Math.max(0.05, (std.roughness as number) * (1 - 0.2 * o.clearcoat));
+  // a toned-down specular (the park pond, so it reads as water rather than ice): dim the
+  // environment's reflections by as much, which is most of what shows on a dark surface
+  if (typeof o.specularIntensity === 'number' && o.specularIntensity < 1) std.envMapIntensity = (o.envMapIntensity ?? 1) * o.specularIntensity;
   return new THREE.MeshStandardMaterial(std as THREE.MeshStandardMaterialParameters) as unknown as THREE.MeshPhysicalMaterial;
 }

@@ -182,7 +182,10 @@ export class Engine {
       this.renderer.setSize(w, h, false);
       this.renderSize.set(w, h);
       this.retro.setSize(w, h);
-      this.renderer.domElement.style.imageRendering = pixelated ? 'pixelated' : 'auto';
+      const style = this.renderer.domElement.style;
+      // (browsers ignore values they don't know: older Firefox takes crisp-edges only)
+      style.imageRendering = pixelated ? 'crisp-edges' : 'auto';
+      if (pixelated) style.imageRendering = 'pixelated';
       this.drawn = false;
     }
     if (this.current) {
