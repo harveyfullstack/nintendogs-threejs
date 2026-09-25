@@ -3,6 +3,10 @@
 // obedience ring builders.
 
 import * as THREE from 'three';
+import { physicalMaterial } from './materials';
+import { texSize } from '../game/quality';
+import { shadowMapSize } from '../game/shadows';
+import { freeGeometryAfterUpload, manageCanvasTexture } from './texmem';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { Circle, Room, RoomTheme } from './types';
@@ -40,7 +44,8 @@ export function canvasTex(c: HTMLCanvasElement, color = true, repeat = true): TH
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
   t.needsUpdate = true;
-  return t;
+  // fit to the device, free the canvas once uploaded (see texmem.ts)
+  return manageCanvasTexture(t);
 }
 
 /** Tileable fractal value noise in [0, 1]. `cells` is the lattice size of the first octave. */
@@ -808,6 +813,7 @@ export class Batch {
       for (const g of list) g.dispose();
       if (!merged) continue;
       merged.computeBoundingSphere();
+      freeGeometryAfterUpload(merged);
       const mesh = new THREE.Mesh(merged, mat);
       mesh.name = `${name}:${mat.name || mat.type}`;
       mesh.castShadow = mat.userData.cast ?? true;
@@ -851,7 +857,7 @@ export function stdMat(name: string, o: MatOpts): THREE.MeshStandardMaterial {
 
 export function physMat(name: string, o: THREE.MeshPhysicalMaterialParameters & { cast?: boolean; receive?: boolean }): THREE.MeshPhysicalMaterial {
   const { cast, receive, ...params } = o;
-  const m = new THREE.MeshPhysicalMaterial(params);
+  const m = physicalMaterial(params);
   m.name = name;
   if (cast !== undefined) m.userData.cast = cast;
   if (receive !== undefined) m.userData.receive = receive;
@@ -938,7 +944,7 @@ export class ContactShadows {
         .replace('#include <common>', '#include <common>\nvarying float vStrength;')
         .replace('#include <opaque_fragment>', 'diffuseColor.a *= vStrength;\n#include <opaque_fragment>');
     };
-    const mesh = new THREE.Mesh(g, this.material);
+    const mesh = new THREE.Mesh(freeGeometryAfterUpload(g), this.material);
     mesh.name = 'contactShadows';
     mesh.renderOrder = 1;
     mesh.matrixAutoUpdate = false;
@@ -979,10 +985,12 @@ export function makeSun(color: THREE.ColorRepresentation, intensity: number, dir
   sun.position.copy(target).addScaledVector(dir.clone().normalize(), -15);
   sun.target.position.copy(target);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(mapSize, mapSize);
+  const size = shadowMapSize(mapSize);
+  sun.shadow.mapSize.set(size, size);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.02;
-  sun.shadow.radius = 3;
+  // keep the penumbra the same width in the room at a smaller map
+  sun.shadow.radius = 3 * (size / mapSize);
   return sun;
 }
 
@@ -2712,7 +2720,7 @@ function buildDefaultRoom(): ThemeBuild {
   const r = rng(11);
   const art = pictureAtlas([paintLandscape, paintDogPortrait, paintAbstract, paintBotanical], 5);
   const m = makePropMats(100, art);
-  const fl = plankTextures({ px: 2048, rows: 12, minLen: 0.35, maxLen: 0.75, colors: ['#bb8c5f', '#c29568', '#b08152', '#b8885c', '#c49b6d', '#a97c50'], seed: 7, knots: 0 });
+  const fl = plankTextures({ px: texSize(2048), rows: 12, minLen: 0.35, maxLen: 0.75, colors: ['#bb8c5f', '#c29568', '#b08152', '#b8885c', '#c49b6d', '#a97c50'], seed: 7, knots: 0 });
   const floorMat = stdMat('floor', { map: fl.map, normalMap: fl.normalMap, roughnessMap: fl.roughnessMap, roughness: 1, normalScale: new THREE.Vector2(0.7, 0.7), cast: false });
   const textile = textileAtlas(21, { field: '#dccaa8', border: '#9e4b35', accent: '#3f5f6e', accent2: '#c99a4b', pattern: 'kilim' });
   const pile = plushTextures(22, 256);
@@ -3137,7 +3145,7 @@ function buildModernRoom(): ThemeBuild {
   const r = rng(51);
   const art = pictureAtlas([paintAbstract, paintBotanical, paintLandscape, paintDogPortrait], 12);
   const m = makePropMats(500, art);
-  const fl = plankTextures({ px: 2048, rows: 9, minLen: 0.55, maxLen: 1.0, colors: ['#dcc3a0', '#d6bb95', '#e0c9a8', '#d2b58c', '#dac09b'], seed: 17, dark: '120,90,55', grain: 0.3, seam: 0.35 });
+  const fl = plankTextures({ px: texSize(2048), rows: 9, minLen: 0.55, maxLen: 1.0, colors: ['#dcc3a0', '#d6bb95', '#e0c9a8', '#d2b58c', '#dac09b'], seed: 17, dark: '120,90,55', grain: 0.3, seam: 0.35 });
   const floorMat = stdMat('floor', { map: fl.map, normalMap: fl.normalMap, roughnessMap: fl.roughnessMap, roughness: 1.25, normalScale: new THREE.Vector2(0.5, 0.5), cast: false });
   const textile = textileAtlas(61, { field: '#d9d3c9', border: '#bdb4a7', accent: '#cfc6b8', accent2: '#a59b8d', pattern: 'round' }, false);
   const pile = plushTextures(62, 256);

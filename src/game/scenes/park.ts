@@ -28,7 +28,7 @@ export async function createPark(game: Game): Promise<GameScene> {
   cam.follow = 0.9;
 
   const d = game.dog!;
-  const actor = game.actorFor(d);
+  const actor = await game.actorFor(d);
   game.resetActor(actor);
   actor.bounds = park.bounds;
   actor.obstacles = park.obstacles;

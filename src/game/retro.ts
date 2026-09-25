@@ -1,8 +1,15 @@
 import * as THREE from 'three';
 
-// Nintendo DS flavoured output: the 3D view renders at a lower "virtual"
-// resolution, then is upscaled with hard pixel edges and ordered-dithered down
-// to 5 bits per channel, like the DS's 15-bit screens.
+// Output stage. The 3D view renders into an offscreen multisampled target that is
+// exactly the size of the canvas, then one cheap full-screen pass copies it to the
+// canvas: ordered-dithered down to 5 bits per channel for the DS looks (like the
+// DS's 15-bit screens), straight for Modern. The browser scales the canvas up to
+// the page (with hard pixel edges for the DS looks), so nothing on the GPU ever
+// runs at the phone's full native resolution unless there's budget for it.
+//
+// Materials tone map and sRGB-encode as they would drawing to the canvas (see
+// sceneTarget), so the target can be plain 8-bit RGBA: half the memory and
+// bandwidth of a float buffer, and it works on GPUs that can't render to floats.
 
 export type RetroMode = 'off' | 'subtle' | 'ds';
 
@@ -14,7 +21,6 @@ export const RETRO_MODES: { id: RetroMode; label: string; pixel: number; levels:
 
 const FRAG = /* glsl */ `
 uniform sampler2D tDiffuse;
-uniform vec2 lowRes;
 uniform float levels;
 varying vec2 vUv;
 
@@ -27,16 +33,16 @@ float bayer4(vec2 p) {
 }
 
 void main() {
-  gl_FragColor = texture2D(tDiffuse, vUv);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-  // quantise in display space so the steps are perceptually even
-  vec2 px = floor(vUv * lowRes);
-  float threshold = bayer4(px);
-  float n = levels - 1.0;
-  vec3 c = clamp(gl_FragColor.rgb, 0.0, 1.0) * n;
-  gl_FragColor.rgb = (floor(c) + step(threshold, fract(c))) / n;
-  gl_FragColor.a = 1.0;
+  // already tone mapped and in display space (see sceneTarget)
+  vec3 c = texture2D(tDiffuse, vUv).rgb;
+  if (levels < 255.0) {
+    // quantise in display space so the steps are perceptually even
+    float threshold = bayer4(floor(gl_FragCoord.xy));
+    float n = levels - 1.0;
+    c = clamp(c, 0.0, 1.0) * n;
+    c = (floor(c) + step(threshold, fract(c))) / n;
+  }
+  gl_FragColor = vec4(c, 1.0);
 }
 `;
 
@@ -48,76 +54,100 @@ void main() {
 }
 `;
 
+/**
+ * An offscreen target that materials render into exactly as they would into the
+ * canvas: tone mapped and sRGB encoded in the shader (three.js only does that for
+ * the canvas and for XR targets, hence the flag), stored as raw RGBA8.
+ */
+export function sceneTarget(w: number, h: number, samples = 4): THREE.WebGLRenderTarget {
+  const rt = new THREE.WebGLRenderTarget(w, h, {
+    samples,
+    type: THREE.UnsignedByteType,
+    colorSpace: THREE.SRGBColorSpace,
+    minFilter: THREE.NearestFilter,
+    magFilter: THREE.NearestFilter,
+    generateMipmaps: false,
+    depthBuffer: true,
+    stencilBuffer: false,
+  });
+  // store the encoded values as they are: no hardware sRGB conversion on write or read
+  rt.texture.internalFormat = 'RGBA8';
+  (rt as THREE.WebGLRenderTarget & { isXRRenderTarget: boolean }).isXRRenderTarget = true;
+  // only colour is needed after the multisample resolve
+  rt.resolveDepthBuffer = false;
+  rt.resolveStencilBuffer = false;
+  return rt;
+}
+
+/**
+ * Tell the GPU the multisampled buffers of `rt` won't be read again: tile-based
+ * (phone) GPUs can then resolve on-chip instead of writing every sample out to memory.
+ */
+export function discardSamples(renderer: THREE.WebGLRenderer, rt: THREE.WebGLRenderTarget) {
+  const fb = (renderer.properties.get(rt) as { __webglMultisampledFramebuffer?: WebGLFramebuffer }).__webglMultisampledFramebuffer;
+  if (!fb) return;
+  const gl = renderer.getContext() as WebGL2RenderingContext;
+  renderer.state.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.invalidateFramebuffer(gl.FRAMEBUFFER, [gl.COLOR_ATTACHMENT0, gl.DEPTH_ATTACHMENT]);
+  renderer.state.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
 export class RetroPass {
   mode: RetroMode = 'subtle';
-  private rt: THREE.WebGLRenderTarget;
+  readonly target: THREE.WebGLRenderTarget;
   private quad: THREE.Mesh;
   private material: THREE.ShaderMaterial;
   private scene = new THREE.Scene();
   private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  private checked = false;
 
   constructor() {
-    this.rt = RetroPass.target(THREE.HalfFloatType);
+    this.target = sceneTarget(1, 1);
     this.material = new THREE.ShaderMaterial({
       uniforms: {
-        tDiffuse: { value: this.rt.texture },
-        lowRes: { value: new THREE.Vector2(1, 1) },
-        levels: { value: 32 },
+        tDiffuse: { value: this.target.texture },
+        levels: { value: 256 },
       },
       vertexShader: VERT,
       fragmentShader: FRAG,
       depthTest: false,
       depthWrite: false,
+      blending: THREE.NoBlending,
+      toneMapped: false,
     });
-    this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
+    // one triangle covering the screen
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 2, 0, 0, 2], 2));
+    this.quad = new THREE.Mesh(g, this.material);
     this.quad.frustumCulled = false;
     this.scene.add(this.quad);
   }
 
-  private static target(type: THREE.TextureDataType) {
-    return new THREE.WebGLRenderTarget(1, 1, {
-      samples: 4,
-      type,
-      minFilter: THREE.NearestFilter,
-      magFilter: THREE.NearestFilter,
-      depthBuffer: true,
-    });
+  get config() {
+    return RETRO_MODES.find((m) => m.id === this.mode) ?? RETRO_MODES[1];
   }
 
   get enabled() {
     return this.mode !== 'off';
   }
 
-  render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
-    if (!this.checked) {
-      // some mobile GPUs can't render to half-float targets; 8-bit clips highlights but still works
-      this.checked = true;
-      const ext = renderer.extensions;
-      if (!ext.has('EXT_color_buffer_float') && !ext.has('EXT_color_buffer_half_float')) {
-        this.rt.dispose();
-        this.rt = RetroPass.target(THREE.UnsignedByteType);
-        this.material.uniforms.tDiffuse.value = this.rt.texture;
-      }
-    }
-    const cfg = RETRO_MODES.find((m) => m.id === this.mode) ?? RETRO_MODES[1];
-    // virtual resolution: one "DS pixel" is `cfg.pixel` CSS pixels
-    const css = renderer.getSize(new THREE.Vector2());
-    const w = Math.max(1, Math.round(css.x / cfg.pixel));
-    const h = Math.max(1, Math.round(css.y / cfg.pixel));
-    if (this.rt.width !== w || this.rt.height !== h) this.rt.setSize(w, h);
-    this.material.uniforms.lowRes.value.set(w, h);
-    this.material.uniforms.levels.value = cfg.levels;
+  /** Match the offscreen target to the canvas size. */
+  setSize(w: number, h: number) {
+    if (this.target.width !== w || this.target.height !== h) this.target.setSize(w, h);
+  }
 
+  render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
     const prev = renderer.getRenderTarget();
-    renderer.setRenderTarget(this.rt);
+    renderer.setRenderTarget(this.target);
     renderer.render(scene, camera);
+    discardSamples(renderer, this.target);
+    this.material.uniforms.levels.value = this.config.levels;
     renderer.setRenderTarget(prev);
     renderer.render(this.scene, this.camera);
   }
 
   dispose() {
-    this.rt.dispose();
+    this.target.dispose();
     this.material.dispose();
     this.quad.geometry.dispose();
   }

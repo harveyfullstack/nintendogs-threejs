@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { physicalMaterial } from '../../world/materials';
 import type { DogHit } from '../../dog/actor';
 import { Brain } from '../../dog/brain';
 import { touchUI } from '../../ui/device';
@@ -26,7 +27,7 @@ export async function createBath(game: Game, args?: { dogId?: string }): Promise
   if (bath.fog) scene.fog = bath.fog;
 
   const d = game.save.dogs.find((x) => x.id === args?.dogId) ?? game.dog!;
-  const actor = game.actorFor(d);
+  const actor = await game.actorFor(d);
   game.resetActor(actor);
   actor.floorY = bath.tubCenter.y;
   actor.bounds = { minX: bath.tubCenter.x - bath.tubHalf.x, maxX: bath.tubCenter.x + bath.tubHalf.x, minZ: bath.tubCenter.z - bath.tubHalf.z, maxZ: bath.tubCenter.z + bath.tubHalf.z };
@@ -49,7 +50,7 @@ export async function createBath(game: Game, args?: { dogId?: string }): Promise
   // bubbles
   const maxBubbles = 420;
   const bubbleGeo = new THREE.SphereGeometry(1, 10, 8);
-  const bubbleMat = new THREE.MeshPhysicalMaterial({ color: '#ffffff', roughness: 0.15, transparent: true, opacity: 0.85, clearcoat: 1, iridescence: 0.6, iridescenceIOR: 1.3 });
+  const bubbleMat = physicalMaterial({ color: '#ffffff', roughness: 0.15, transparent: true, opacity: 0.85, clearcoat: 1, iridescence: 0.6, iridescenceIOR: 1.3 });
   const bubbleMesh = new THREE.InstancedMesh(bubbleGeo, bubbleMat, maxBubbles);
   bubbleMesh.count = 0;
   bubbleMesh.frustumCulled = false;

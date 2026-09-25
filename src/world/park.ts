@@ -3,6 +3,7 @@
 // houses across the road outside the fence and hills beyond.
 
 import * as THREE from 'three';
+import { physicalMaterial } from './materials';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Circle, Place } from './types';
 import {
@@ -10,7 +11,7 @@ import {
   addBench, addFencePost, addIronFence, addStreetLamp, boxGeo, buildFacadeAtlas, buildLot, canvasTexture,
   centerText, createCars, createGrassField, createKit, createOutdoorLights, cylGeo, drawBone, drawPaw, fbm2,
   flatRect, hash2, hedgeGeo, makeCanvas, mul, mulberry32, prepGeometry, roundRect, shrubGeo, signBoard, terrain, tm,
-  woodBoard, type CarPlacement, type LotCtx,
+  woodBoard, type CarPlacement, type LotCtx, farBatch,
 } from './town';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -156,13 +157,13 @@ export function buildPark(renderer: THREE.WebGLRenderer): Place {
   const waterNormal = canvasTexture(waterNormalCanvas(), 9, false);
   kit.tex(waterNormal);
   // low specular intensity caps the grazing-angle sky reflection so the pond reads as water, not ice
-  kit.mat('water', new THREE.MeshPhysicalMaterial({ color: '#1b3f38', roughness: 0.1, metalness: 0, specularIntensity: 0.35, normalMap: waterNormal, normalScale: new THREE.Vector2(0.18, 0.18) }));
+  kit.mat('water', physicalMaterial({ color: '#1b3f38', roughness: 0.1, metalness: 0, specularIntensity: 0.35, normalMap: waterNormal, normalScale: new THREE.Vector2(0.18, 0.18) }));
 
   const b = new Batch([44, 44], { x: -66, z: -66 });
   b.aliases = { metal: 'trim', paint: 'trim', dirt: 'concrete' };
   b.noCast = new Set(['facade', 'grass', 'sidewalk', 'asphalt', 'gravel']);
   b.chunked = new Set(['trim', 'foliage', 'leafCard', 'bark']);
-  const far = new Batch(0);
+  const far = farBatch();
   const trees = new TreeFactory(4);
   const flowers = new FlowerSink();
   const shrubs = Array.from({ length: 6 }, (_, k) => shrubGeo(k * 13 + 1, 1, 0.8));
@@ -419,7 +420,7 @@ export function buildPark(renderer: THREE.WebGLRenderer): Place {
   treeSpots.push([34.5, -34.5, 'conifer'], [-34.5, -34.5, 'conifer'], [34, 34.5, 'round'], [-34.5, 34, 'oval'], [20, -18.5, 'blossom'], [-20.5, 19.5, 'blossom']);
   for (const [x, z, kind] of treeSpots) {
     b.anchor = { x, z };
-    obstacles.push(trees.add(b, kind, x, z, { scale: 1.05 + r() * 0.25 }));
+    obstacles.push(trees.add(b, kind, x, z, { scale: 1.05 + r() * 0.25, near: true }));
   }
 
   // ------------------------------------------------------------------ streets and houses outside the fence

@@ -120,6 +120,8 @@ function getStudio(renderer: THREE.WebGLRenderer): Studio {
     targets: new Map(),
   };
   studios.set(renderer, s);
+  // a lost GPU context takes the studio's environment map with it: rebuild next time
+  renderer.domElement.addEventListener('webglcontextrestored', () => studios.delete(renderer), { once: true });
   return s;
 }
 

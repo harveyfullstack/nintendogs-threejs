@@ -119,20 +119,26 @@ export class Overlay {
     return () => { el.remove(); this.tracked = this.tracked.filter((x) => x !== t); };
   }
 
-  project(world: THREE.Vector3): { x: number; y: number } | null {
+  project(world: THREE.Vector3, size?: { w: number; h: number }): { x: number; y: number } | null {
     if (!this.camera) return null;
     _v.copy(world).project(this.camera);
     if (_v.z > 1) return null;
-    const w = this.root.clientWidth, hh = this.root.clientHeight;
+    const w = size ? size.w : this.root.clientWidth, hh = size ? size.h : this.root.clientHeight;
     return { x: (_v.x * 0.5 + 0.5) * w, y: (-_v.y * 0.5 + 0.5) * hh };
   }
 
+  private size = { w: 0, h: 0 };
   update() {
+    if (!this.tracked.length) return;
+    // read the layout once, before any writes: reading it between style writes would
+    // force the browser to lay the page out again for every tracked element
+    this.size.w = this.root.clientWidth;
+    this.size.h = this.root.clientHeight;
     for (const t of this.tracked) {
       const w = t.get();
-      const p = w ? this.project(w) : null;
-      if (!p) { t.el.style.display = 'none'; continue; }
-      t.el.style.display = '';
+      const p = w ? this.project(w, this.size) : null;
+      if (!p) { if (t.el.style.display !== 'none') t.el.style.display = 'none'; continue; }
+      if (t.el.style.display) t.el.style.display = '';
       t.el.style.left = p.x + 'px';
       t.el.style.top = p.y + t.offY + 'px';
     }

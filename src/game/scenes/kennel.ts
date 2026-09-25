@@ -215,23 +215,26 @@ export async function createKennel(game: Game, args?: { adopting?: boolean }): P
     markBreed(b.id);
     clearPups();
     renderInfo();
-    // let the card show "fetching" before the heavy lifting blocks the page
     await nextFrame();
     const coats = [...b.coats];
     while (coats.length < 3) coats.push(b.coats[Math.floor(Math.random() * b.coats.length)]);
+    // all three are made at once, off the page's thread; each comes out as it's ready,
+    // in litter order so the chips fill left to right
+    const made = coats.slice(0, 3).map((coat) => DogActor.create(b, coat, game.previewQuality));
     for (let i = 0; i < 3; i++) {
-      if (mine !== litter || exited || adopted) return;
+      if (mine !== litter || exited || adopted) { for (const m of made.slice(i)) void m.then((a) => a.dispose(), () => {}); return; }
       const coat = coats[i];
       let actor: DogActor;
       try {
-        actor = new DogActor(b, coat, game.previewQuality);
+        actor = await made[i];
       } catch (e) {
         console.error('could not make a puppy', b.id, coat.id, e);
         if (mine === litter) { status = 'failed'; renderInfo(); }
+        for (const m of made.slice(i + 1)) void m.then((a) => a.dispose(), () => {});
         return;
       }
       // someone picked another breed (or left, or adopted) while this one was being made
-      if (mine !== litter || exited || adopted) { actor.dispose(); return; }
+      if (mine !== litter || exited || adopted) { actor.dispose(); for (const m of made.slice(i + 1)) void m.then((a) => a.dispose(), () => {}); return; }
       actor.bounds = bounds;
       actor.floorY = k.penCenter.y;
       const x = k.penCenter.x + (i - 1) * Math.min(0.6, k.penHalf.x * 0.6);

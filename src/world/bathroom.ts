@@ -2,6 +2,7 @@
 // shampoo and shower. The camera looks down into the tub from about 0.8 m.
 
 import * as THREE from 'three';
+import { texSize } from '../game/quality';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Bathroom } from './types';
 import {
@@ -159,9 +160,9 @@ export function buildBathroom(renderer: THREE.WebGLRenderer): Bathroom {
   // walls/ceiling don't block the key light in here: it stands in for the ceiling lamp
   m.paint.userData.cast = false;
 
-  const subway = tileTextures({ px: 1024, cols: 4, rows: 8, grout: 7, colors: ['#f6f7f6', '#f2f4f3', '#fafaf8'], groutColor: '#d9dcda', seed: 3, stagger: true, rough: 0.1 });
+  const subway = tileTextures({ px: texSize(1024), cols: 4, rows: 8, grout: 7, colors: ['#f6f7f6', '#f2f4f3', '#fafaf8'], groutColor: '#d9dcda', seed: 3, stagger: true, rough: 0.1 });
   const wallTile = stdMat('wallTile', { map: subway.map, normalMap: subway.normalMap, roughnessMap: subway.roughnessMap, roughness: 1, normalScale: new THREE.Vector2(0.8, 0.8), cast: false });
-  const floorT = tileTextures({ px: 1024, cols: 3, rows: 3, grout: 8, colors: ['#e3e7ea', '#dde2e6', '#e8ebed'], groutColor: '#b9bec2', seed: 4, marble: 1, rough: 0.3 });
+  const floorT = tileTextures({ px: texSize(1024), cols: 3, rows: 3, grout: 8, colors: ['#e3e7ea', '#dde2e6', '#e8ebed'], groutColor: '#b9bec2', seed: 4, marble: 1, rough: 0.3 });
   const floorTile = stdMat('floorTile', { map: floorT.map, normalMap: floorT.normalMap, roughnessMap: floorT.roughnessMap, roughness: 1, normalScale: new THREE.Vector2(0.7, 0.7), cast: false });
   const band = tileTextures({ px: 256, cols: 4, rows: 1, grout: 4, colors: ['#6fb3c4', '#5fa6b8'], groutColor: '#e4e8e8', seed: 5, rough: 0.12 });
   const bandTile = stdMat('bandTile', { map: band.map, normalMap: band.normalMap, roughness: 0.15, cast: false });
@@ -315,7 +316,7 @@ export function buildBathroom(renderer: THREE.WebGLRenderer): Bathroom {
   // lighting: soft key from the ceiling lamp (front, above), bright cool fill
   const tubCenter = new THREE.Vector3(0, floorY, tubZ);
   const sun = makeSun('#fff6ea', 2.0, new THREE.Vector3(-0.3, -0.85, -0.42), tubCenter, 1024);
-  sun.shadow.radius = 5;
+  sun.shadow.radius = 5 * (sun.shadow.mapSize.x / 1024);
   sun.shadow.normalBias = 0.01;
   fitShadow(sun, new THREE.Box3(new THREE.Vector3(-1.0, 0, -d.D / 2), new THREE.Vector3(1.2, 1.0, tubZ + 0.9)), 0.05);
   group.add(sun, sun.target);

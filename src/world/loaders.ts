@@ -39,13 +39,15 @@ function placeholderPlace(renderer: THREE.WebGLRenderer, color = '#d8c7a8', size
   group.add(sun, sun.target);
   group.add(new THREE.HemisphereLight('#fff8ee', '#9c8468', 0.9));
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const envTarget = pmrem.fromScene(new RoomEnvironment(), 0.04);
+  pmrem.dispose();
+  const env = envTarget.texture;
   return {
     group, sun, environment: env, background: new THREE.Color('#e9dcc6'),
     bounds: { minX: -size / 2, maxX: size / 2, minZ: -size / 2, maxZ: size / 2 },
     obstacles: [],
     camera: { position: new THREE.Vector3(0, 0.8, size / 2 + 0.3), target: new THREE.Vector3(0, 0.2, 0) },
-    dispose() { env.dispose(); },
+    dispose() { envTarget.dispose(); sun.shadow.dispose(); },
   };
 }
 

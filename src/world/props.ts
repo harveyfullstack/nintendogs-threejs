@@ -10,6 +10,7 @@
 //   free geometries and materials but keep the shared textures alive.
 
 import * as THREE from 'three';
+import { physicalMaterial } from './materials';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type {
@@ -336,7 +337,7 @@ function shadowed(obj: THREE.Object3D, cast = true) {
 // =============================================================================
 
 type MatOpts = THREE.MeshPhysicalMaterialParameters;
-const phys = (o: MatOpts) => new THREE.MeshPhysicalMaterial(o);
+const phys = (o: MatOpts) => physicalMaterial(o);
 const stdm = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(o);
 
 function plastic(color: THREE.ColorRepresentation, rough = 0.35, extra: MatOpts = {}) {
