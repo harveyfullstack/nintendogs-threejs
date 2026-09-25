@@ -15,18 +15,21 @@ import { newDog, newSave } from '../state';
 export async function createTitle(game: Game): Promise<GameScene> {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, 1, 0.02, 60);
+  const picks: [string, number][] = [['labrador', 0], ['shiba', 0], ['beagle', 0]];
+  // the puppies are built in workers while the room is put together
+  const made = Promise.all(picks.map(([id, ci]) => { const breed = getBreed(id); return DogActor.create(breed, breed.coats[ci], game.previewQuality); }));
+  made.catch(() => {}); // reported where it's awaited
   const room = await loadRoom('default', game.renderer);
   scene.add(room.group);
   scene.environment = room.environment ?? null;
   scene.background = room.background ?? new THREE.Color('#e9dcc6');
 
   const pups: { actor: DogActor; brain: Brain }[] = [];
-  const picks: [string, number][] = [['labrador', 0], ['shiba', 0], ['beagle', 0]];
   const center = room.camera.target.clone().setY(0);
   const fake = newDog('Pup', 'labrador', 'yellow', 'male');
-  for (const [i, [id, ci]] of picks.entries()) {
-    const breed = getBreed(id);
-    const actor = new DogActor(breed, breed.coats[ci], game.previewQuality);
+  const actors = await made;
+  for (const [i] of picks.entries()) {
+    const actor = actors[i];
     actor.bounds = room.bounds;
     actor.obstacles = room.obstacles;
     actor.place(center.x + (i - 1) * 0.6, center.z + (i === 1 ? 0.3 : 0), Math.PI + (i - 1) * 0.5);

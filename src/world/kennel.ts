@@ -2,6 +2,7 @@
 // bedding, a few toys, and a cheerful sign on the wall.
 
 import * as THREE from 'three';
+import { texSize } from '../game/quality';
 import type { Kennel } from './types';
 import {
   Batch,
@@ -225,7 +226,7 @@ export function buildKennel(renderer: THREE.WebGLRenderer): Kennel {
   const r = rng(91);
   const art = pictureAtlas([paintDogPortrait, paintLandscape, paintBotanical, paintAbstract], 13);
   const m = makePropMats(900, art);
-  const tiles = tileTextures({ px: 1024, cols: 2, rows: 2, grout: 3, colors: ['#f6efe0', '#cfe6ef'], groutColor: '#d6d0c4', seed: 9, checker: true, rough: 0.35 });
+  const tiles = tileTextures({ px: texSize(1024), cols: 2, rows: 2, grout: 3, colors: ['#f6efe0', '#cfe6ef'], groutColor: '#d6d0c4', seed: 9, checker: true, rough: 0.35 });
   const floorMat = stdMat('floorTile', { map: tiles.map, normalMap: tiles.normalMap, roughnessMap: tiles.roughnessMap, roughness: 1, normalScale: new THREE.Vector2(0.3, 0.3), cast: false });
   const fleece = plushTextures(92, 256);
   const beddingMat = stdMat('bedding', { map: fleece.map, normalMap: fleece.normalMap, normalScale: new THREE.Vector2(1.2, 1.2), vertexColors: true, roughness: 1, cast: false });

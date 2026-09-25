@@ -180,7 +180,7 @@ export function settingsPanel(game: Game, onChange: () => void) {
     for (const m of RETRO_MODES) {
       looks.append(h('button', {
         class: 'tab' + (game.engine.retro.mode === m.id ? ' active' : ''),
-        onclick: () => { game.engine.retro.mode = m.id; s.retro = m.id; game.persist(); sound.sfx('select'); renderLooks(); },
+        onclick: () => { game.engine.setRetroMode(m.id); s.retro = m.id; game.persist(); sound.sfx('select'); renderLooks(); },
       }, m.label));
     }
   };

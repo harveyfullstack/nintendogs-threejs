@@ -115,5 +115,5 @@ export async function createShop(game: Game, args?: { kind?: 'pet' | 'secondhand
   render();
   sound.sfx('bell');
   sound.music('shop');
-  return { scene, camera, update() {} };
+  return { scene, camera, still: true, update() {} };
 }

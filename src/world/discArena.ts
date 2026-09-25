@@ -4,12 +4,13 @@
 // agility course reuses.
 
 import * as THREE from 'three';
+import { budget, deviceTier } from '../game/quality';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Bounds, DiscArena } from './types';
 import {
   Atlas, Batch, Kit, MeshBuilder, ROUNDED, TreeFactory, addBench, boxGeo, centerText, createFlags, createGrassField,
   createKit, createOutdoorLights, cylGeo, drawBone, drawPaw, fbm2, flagGeo, flatRect, makeCanvas, makeGrassMaterial,
-  mul, mulberry32, prepGeometry, roundRect, terrain, tm, type AtlasRect, type Flags,
+  hash2, mul, mulberry32, prepGeometry, roundRect, terrain, tm, type AtlasRect, type Flags, farBatch,
 } from './town';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -131,19 +132,24 @@ export function addBleachers(b: Batch, M: THREE.Matrix4, L: number, rows: number
 export interface Crowd { group: THREE.Group; update(time: number): void; dispose(): void }
 
 /** Simple seated spectators (instanced), gently bobbing and cheering. */
-export function createCrowd(seats: Seat[], seed = 1): Crowd {
+export function createCrowd(allSeats: Seat[], seed = 1): Crowd {
   const group = new THREE.Group();
   group.name = 'crowd';
   const r = mulberry32(seed);
+  // phones: coarser heads (a few pixels tall up in the stands), no shadows, and on the
+  // slowest a thinner crowd
+  const detailed = deviceTier() === 'high';
+  const keep = budget().crowd;
+  const seats = keep < 1 ? allSeats.filter((_, i) => hash2(i, seed, 7) < keep) : allSeats;
   const paint = (g: THREE.BufferGeometry, c: THREE.ColorRepresentation) => prepGeometry(g, null, c, 'keep');
   const torso = mergeGeometries([
-    paint(new THREE.CylinderGeometry(0.15, 0.19, 0.56, 10).translate(0, 0.32, -0.02), 0xffffff),
+    paint(new THREE.CylinderGeometry(0.15, 0.19, 0.56, detailed ? 10 : 7).translate(0, 0.32, -0.02), 0xffffff),
     paint(new THREE.BoxGeometry(0.08, 0.42, 0.1).rotateX(0.5).translate(-0.21, 0.36, 0.06), 0xffffff),
     paint(new THREE.BoxGeometry(0.08, 0.42, 0.1).rotateX(0.5).translate(0.21, 0.36, 0.06), 0xffffff),
   ])!;
   const head = mergeGeometries([
-    paint(new THREE.SphereGeometry(0.11, 12, 10).translate(0, 0.74, 0), 0xffffff),
-    paint(new THREE.SphereGeometry(0.117, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.55).translate(0, 0.755, -0.012), '#3a2a1e'),
+    paint(new THREE.SphereGeometry(0.11, detailed ? 12 : 8, detailed ? 10 : 6).translate(0, 0.74, 0), 0xffffff),
+    paint(new THREE.SphereGeometry(0.117, detailed ? 12 : 8, detailed ? 6 : 4, 0, Math.PI * 2, 0, Math.PI * 0.55).translate(0, 0.755, -0.012), '#3a2a1e'),
   ])!;
   const legs = mergeGeometries([
     paint(new THREE.BoxGeometry(0.32, 0.14, 0.44).translate(0, 0.07, 0.2), 0xffffff),
@@ -156,7 +162,7 @@ export function createCrowd(seats: Seat[], seed = 1): Crowd {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
   const meshes = [torso, head, legs].map((g) => {
     const m = new THREE.InstancedMesh(g, mat, seats.length);
-    m.castShadow = true;
+    m.castShadow = detailed;
     m.receiveShadow = true;
     group.add(m);
     return m;
@@ -328,7 +334,7 @@ export function buildDiscArena(renderer: THREE.WebGLRenderer): DiscArena {
   const b = new Batch(0);
   b.aliases = { metal: 'trim', paint: 'trim' };
   b.noCast = new Set(['field', 'decal', 'facade']);
-  const far = new Batch(0);
+  const far = farBatch();
   const trees = new TreeFactory(4);
   const flagGeos: THREE.BufferGeometry[] = [];
   const r = mulberry32(42);

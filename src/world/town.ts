@@ -7,6 +7,10 @@
 // shadow pass only touches the chunks near the dog.
 
 import * as THREE from 'three';
+import { physicalMaterial } from './materials';
+import { budget, deviceTier, live } from '../game/quality';
+import { shadowMapSize } from '../game/shadows';
+import { freeGeometryAfterUpload, manageCanvasTexture } from './texmem';
 import { mergeGeometries, mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Bounds, Circle, TownLayout, TownWorld } from './types';
 import { blockRect, pitch } from './townLayout';
@@ -108,7 +112,7 @@ export function canvasTexture(c: HTMLCanvasElement, tile = 1, color = true): THR
   t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   t.anisotropy = 8;
   t.repeat.set(1 / tile, 1 / tile);
-  return t;
+  return manageCanvasTexture(t);
 }
 
 /** Calls draw() at every wrapped copy that touches the canvas, so strokes tile seamlessly. */
@@ -396,7 +400,8 @@ export class Kit {
 
   tex<T extends THREE.Texture>(t: T): T {
     this.textures.push(t);
-    return t;
+    // canvas textures: fit to the device, free the canvas once uploaded
+    return manageCanvasTexture(t);
   }
 
   mat<T extends THREE.Material>(name: string, m: T): T {
@@ -577,6 +582,7 @@ export class Batch {
       if (!geo) continue;
       geo.computeBoundingSphere();
       geo.computeBoundingBox();
+      freeGeometryAfterUpload(geo);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.name = bucket;
       mesh.castShadow = flag !== 'noshadow' && flag !== 'nocast' && !this.noCast.has(matName);
@@ -1006,7 +1012,8 @@ export function createOutdoorLights(renderer: THREE.WebGLRenderer, o: OutdoorLig
   const ground = new THREE.Mesh(new THREE.CircleGeometry(60, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.16, 0.2, 0.1) }));
   ground.position.y = -3;
   envScene.add(ground);
-  const environment = pmrem.fromScene(envScene, 0.02, 0.1, 200).texture;
+  const envTarget = pmrem.fromScene(envScene, 0.02, 0.1, 200);
+  const environment = envTarget.texture;
   pmrem.dispose();
   ground.geometry.dispose();
   (ground.material as THREE.Material).dispose();
@@ -1014,7 +1021,8 @@ export function createOutdoorLights(renderer: THREE.WebGLRenderer, o: OutdoorLig
   const sun = new THREE.DirectionalLight(0xfff0dc, o.sunIntensity ?? 2.7);
   sun.name = 'sun';
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  const mapSize = shadowMapSize(2048);
+  sun.shadow.mapSize.set(mapSize, mapSize);
   const S = o.shadowSize ?? 22;
   const cam = sun.shadow.camera;
   cam.left = -S; cam.right = S; cam.top = S; cam.bottom = -S;
@@ -1032,7 +1040,7 @@ export function createOutdoorLights(renderer: THREE.WebGLRenderer, o: OutdoorLig
   const fwd = sunDir.clone().negate();
   const right = V().crossVectors(fwd, V(0, 1, 0)).normalize();
   const up = V().crossVectors(right, fwd).normalize();
-  const texel = (2 * S) / 2048;
+  const texel = (2 * S) / mapSize;
   const snapped = V();
 
   const update = (time: number, focus: THREE.Vector3) => {
@@ -1053,8 +1061,9 @@ export function createOutdoorLights(renderer: THREE.WebGLRenderer, o: OutdoorLig
     dispose() {
       skyGeo.dispose();
       skyMat.dispose();
-      environment.dispose();
-      sun.shadow.map?.dispose();
+      // the whole render target (its framebuffer too), not just its texture
+      envTarget.dispose();
+      sun.shadow.dispose();
     },
   };
 }
@@ -1274,11 +1283,15 @@ export class TreeFactory {
 
   /**
    * Adds a tree to the batch; returns its trunk obstacle circle.
-   * `lod` 1 is a cheap distant tree; `shadow` false keeps it out of the shadow pass.
+   * `lod` 1 is a cheap distant tree (the default on phones unless `near`); `shadow` false
+   * keeps it out of the shadow pass.
    */
-  add(batch: Batch, kind: TreeKind, x: number, z: number, o: { seed?: number; scale?: number; lod?: number; shadow?: boolean; y?: number; tint?: THREE.ColorRepresentation } = {}): Circle {
+  add(batch: Batch, kind: TreeKind, x: number, z: number, o: { seed?: number; scale?: number; lod?: number; shadow?: boolean; y?: number; tint?: THREE.ColorRepresentation; near?: boolean } = {}): Circle {
     const seed = o.seed ?? Math.floor(hash2(Math.round(x * 10), Math.round(z * 10), 5) * 1000);
-    const t = this.template(kind, seed, o.lod ?? 0);
+    // phones: the detailed template only for trees right by the path (`near`); the
+    // simple one (a fifth of the triangles) looks the same a few metres off at their resolution
+    const detailed = deviceTier() === 'high' || (o.near && budget().nearTrees);
+    const t = this.template(kind, seed, detailed ? o.lod ?? 0 : 1);
     const s = o.scale ?? 0.9 + hash2(seed, 3, 1) * 0.25;
     const m = tm(x, o.y ?? 0, z, hash2(seed, 7, 2) * Math.PI * 2, 0, 0, s);
     const suffix = o.shadow === false ? ':noshadow' : '';
@@ -1297,8 +1310,18 @@ export class TreeFactory {
   }
 }
 
-/** Soft rounded leafy blob for shrubs and bushes (origin at the ground). */
-export function shrubGeo(seed: number, w: number, h: number, d = w, detail = 1): THREE.BufferGeometry {
+/**
+ * Batch for scenery around a place (tree belts, hills): chunked on a coarse grid so
+ * frustum culling can skip whatever is behind the camera.
+ */
+export function farBatch(): Batch {
+  const far = new Batch(100, { x: -5000, z: -5000 });
+  far.chunked = new Set(['foliage', 'leafCard', 'bark']);
+  return far;
+}
+
+/** Soft rounded leafy blob for shrubs and bushes (origin at the ground). Phones get the coarser blob. */
+export function shrubGeo(seed: number, w: number, h: number, d = w, detail = deviceTier() === 'high' ? 1 : 0): THREE.BufferGeometry {
   const r = mulberry32(seed);
   const n = 2;
   const parts: THREE.BufferGeometry[] = [];
@@ -1378,8 +1401,10 @@ export interface GrassField {
 }
 
 export function createGrassField(o: GrassFieldOptions = {}): GrassField {
-  const count = o.count ?? 60000;
-  const tile = o.tile ?? 20;
+  // phones: fewer blades over a smaller patch around the dog, at the same density
+  const k = budget().grass;
+  const count = Math.round((o.count ?? 60000) * k);
+  const tile = (o.tile ?? 20) * Math.sqrt(k);
   const [hMin, hMax] = o.height ?? [0.05, 0.11];
   const r = mulberry32(o.seed ?? 3);
   const geo = new THREE.InstancedBufferGeometry();
@@ -1466,6 +1491,8 @@ diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.35, 1.1, 0.45
     mesh,
     update(time, focus) {
       uniforms.uTime.value = time;
+      // blades are scattered uniformly at random: drawing fewer thins the patch evenly
+      geo.instanceCount = Math.max(1, Math.round(count * live.detail));
       uniforms.uFocus.value.copy(focus);
     },
     dispose() { geo.dispose(); mat.dispose(); },
@@ -1551,7 +1578,8 @@ export function terrain(o: TerrainOptions): { geometry: THREE.BufferGeometry; he
   const uv: number[] = [];
   for (let k = 0; k < pos.length; k += 3) uv.push(pos[k], -pos[k + 2]);
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  return { geometry: g, height };
+  // the height is analytic (above), so the mesh's arrays can go once it's on the GPU
+  return { geometry: freeGeometryAfterUpload(g), height };
 }
 
 // =============================================================================
@@ -1702,9 +1730,14 @@ export class FlowerSink {
     const n = Math.round(Math.abs((x1 - x0) * (z1 - z0)) * density);
     const pal = palette ?? [FlowerSink.COLORS[Math.floor(r() * 10)], FlowerSink.COLORS[Math.floor(r() * 10)]];
     const p = V();
+    // phones plant fewer; the random sequence is consumed the same either way so the
+    // rest of the town comes out identical
+    const keep = budget().flowers;
     for (let i = 0; i < n; i++) {
       p.set(x0 + r() * (x1 - x0), y0 + r() * (y1 - y0), z0 + r() * (z1 - z0)).applyMatrix4(M);
-      this.add(p.x, p.y, p.z, pal[Math.floor(r() * pal.length)], 0.8 + r() * 0.5);
+      const color = pal[Math.floor(r() * pal.length)], s = 0.8 + r() * 0.5;
+      if (keep < 1 && hash2(this.scale.length + i, n, 11) > keep) continue;
+      this.add(p.x, p.y, p.z, color, s);
     }
   }
 
@@ -1817,7 +1850,7 @@ export function createCars(list: CarPlacement[]): { group: THREE.Group; dispose(
   group.name = 'cars';
   const geos = carGeometries();
   const mats = {
-    paint: new THREE.MeshPhysicalMaterial({ roughness: 0.32, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08 }),
+    paint: physicalMaterial({ roughness: 0.32, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08 }),
     glass: new THREE.MeshStandardMaterial({ color: '#1c2630', roughness: 0.05, metalness: 0.3 }),
     trim: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.2 }),
   };
@@ -3074,14 +3107,15 @@ export function buildTown(layout: TownLayout, renderer: THREE.WebGLRenderer): To
   buildTownAtlas(atlas);
   atlas.material(kit, 'facade');
   kit.mat('water', new THREE.MeshStandardMaterial({ color: '#2f6f86', roughness: 0.04, metalness: 0.1 }));
-  // 3 x 3 spatial chunks: frustum culling keeps the main pass and the shadow pass cheap
-  const b = new Batch([(outer.maxX - outer.minX) / 3 + 0.01, (outer.maxZ - outer.minZ) / 3 + 0.01], { x: outer.minX, z: outer.minZ });
+  // 5 x 5 spatial chunks (about a block each): frustum culling keeps the main pass and
+  // the shadow pass (a box that follows the dog) from drawing the whole town
+  const b = new Batch([(outer.maxX - outer.minX) / 5 + 0.01, (outer.maxZ - outer.minZ) / 5 + 0.01], { x: outer.minX, z: outer.minZ });
   b.aliases = { metal: 'trim', paint: 'trim', dirt: 'concrete' };
   b.noCast = new Set(['facade', 'grass', 'sidewalk', 'asphalt']);
   // walls, roofs and ground are cheap: one mesh each; only the heavy materials are chunked
   b.chunked = new Set(['trim', 'foliage', 'leafCard', 'bark']);
-  // everything beyond the ring road goes into one unchunked batch
-  const far = new Batch(0);
+  // everything beyond the ring road: big chunks, so the half behind the camera is skipped
+  const far = farBatch();
   far.aliases = b.aliases;
   const trees = new TreeFactory(4);
   const flowers = new FlowerSink();
@@ -3146,7 +3180,7 @@ export function buildTown(layout: TownLayout, renderer: THREE.WebGLRenderer): To
           const x = base + (rr() - 0.5) * 2.4;
           if (!free(x, 0.8) || Math.abs(x - lampX) < 2.2) continue;
           const p = worldOf(M, x, -0.5);
-          trees.add(b, rr() < 0.65 ? 'round' : 'oval', p.x, p.z, { scale: 0.95 + rr() * 0.15 });
+          trees.add(b, rr() < 0.65 ? 'round' : 'oval', p.x, p.z, { scale: 0.95 + rr() * 0.15, near: true });
         }
       });
       if (!poi && rr() < 0.5) addHydrant(b, tm(rect.maxX - 0.55, 0, rect.minZ + 0.55));

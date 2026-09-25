@@ -41,10 +41,22 @@ Labrador, Golden Retriever, Shiba Inu, Siberian Husky, Pembroke Welsh Corgi, Bea
 ## How the dogs are made
 
 - **Sculpt** (`src/dog/design.ts`, `src/dog/breeds.ts`): each breed is a set of proportions (build, head, muzzle, ears, tail). These drive a skeleton and a signed-distance-field sculpt of smooth-blended primitives.
-- **Mesh** (`src/dog/surfaceNets.ts`, `src/dog/dogModel.ts`): the SDF is meshed with surface nets and projected onto the exact surface. Each vertex gets skin weights, coat colour (`src/dog/patterns.ts`), fur length, hair direction and baked ambient occlusion.
-- **Fur** (`src/dog/fur.ts`): shell texturing drawn as a single instanced draw per dog, with strand-level detail up close and mip-style tufts further away. Wetness, soap, dirt and brushing are shader parameters.
+- **Mesh** (`src/dog/surfaceNets.ts`, `src/dog/meshData.ts`): the SDF is meshed with surface nets and projected onto the exact surface. Each vertex gets skin weights, coat colour (`src/dog/patterns.ts`), fur length, hair direction and baked ambient occlusion. The mesh is then simplified (with [meshoptimizer](https://github.com/zeux/meshoptimizer), keeping coat markings) into a few levels of detail. All of this runs in Web Workers (`src/dog/meshPool.ts`), so making puppies never freezes the page.
+- **Fur** (`src/dog/fur.ts`): shell texturing drawn as a single instanced draw per dog, with strand-level detail up close and mip-style tufts further away. The number of shells follows how big the coat is on screen (about one shell per pixel of fur depth). Wetness, soap, dirt and brushing are shader parameters.
 - **Animation** (`src/dog/rig.ts`): poses are authored as leg directions so they transfer between breeds, and a contact solver keeps the dog on the floor. The walk, trot and gallop gaits use two-bone foot IK so paws stay planted. There are layers for tail wag, look-at, blinking, panting and floppy ears.
 - **Behaviour** (`src/dog/brain.ts`): a small activity system covering idling, wandering, sniffing, coming when called, following your hand, being petted, eating, sleeping, fetch, tug of war and tricks.
+
+## Performance
+
+The game aims for 60 fps on phones (and at least 30 on old ones) within the memory a mobile browser allows.
+
+- **Device tiers** (`src/game/quality.ts`): the screen, memory, core count and GPU pick a tier that sets fixed costs when a scene is built: texture resolution, shadow map size and filtering, material complexity, grass, flowers and crowd density, and how finely dogs are sculpted.
+- **Adaptive quality**: the frame rate is watched continuously and a ladder of per-frame costs (render resolution, fur shells, scenery detail, how often shadows are redrawn) moves down when frames are slow and back up when there's headroom. A frame rate that doesn't improve at a cheaper level (a battery saver capping the screen at 30 Hz, say) isn't chased.
+- **Rendering** (`src/game/engine.ts`, `src/game/retro.ts`): the 3D view renders into a multisampled target at the render resolution, and one cheap pass copies it to a canvas of the same size, which the browser scales up to the screen. Screens faster than 60 Hz are drawn at 60 fps, and menus over a still backdrop aren't redrawn at all.
+- **Level of detail**: dogs switch between mesh detail levels by their size on screen and cast their shadows from a coarse stand-in. On phones, trees away from the paths use a simpler model and grass covers a smaller patch around the dog.
+- **Memory** (`src/world/texmem.ts`): procedural textures are painted at the tier's resolution and their canvases are freed once uploaded, static geometry drops its arrays once on the GPU, and each scene's GPU resources (shadow maps and instance buffers included) are released when it's left. If the browser takes the GPU away (it can, under memory pressure), the scene is rebuilt when it comes back.
+
+Add `?fps` to the URL for a frame rate, resolution and memory readout. `?tier=low|mid|high` forces a device tier, `?level=0` to `?level=6` a quality level, and `?fixedres` turns the adaptive quality off.
 
 ## Project layout
 

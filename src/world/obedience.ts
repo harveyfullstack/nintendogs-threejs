@@ -2,6 +2,7 @@
 // barriers, the judges' table, banners, spotlights and hinted spectator stands.
 
 import * as THREE from 'three';
+import { texSize } from '../game/quality';
 import type { ObedienceRing } from './types';
 import {
   Batch,
@@ -210,7 +211,7 @@ export function buildObedienceRing(renderer: THREE.WebGLRenderer): ObedienceRing
   const m = makePropMats(1100, pictureAtlas([paintDogPortrait], 3));
   const signs = atlas([stretched(paintBanner, 0.5), stretched(paintBarrier, 2.9), stretched(paintWallSign, 2), stretched(paintCloth, 2.8)], 5);
   const signMat = stdMat('signs', { map: signs, roughness: 0.7 });
-  const floorT = plankTextures({ px: 1024, rows: 16, minLen: 0.3, maxLen: 0.6, colors: ['#e2bf8e', '#dcb886', '#e6c697', '#d8b280'], seed: 44, dark: '130,90,50', grain: 0.25, seam: 0.3 });
+  const floorT = plankTextures({ px: texSize(1024), rows: 16, minLen: 0.3, maxLen: 0.6, colors: ['#e2bf8e', '#dcb886', '#e6c697', '#d8b280'], seed: 44, dark: '130,90,50', grain: 0.25, seam: 0.3 });
   const hallFloor = stdMat('hallFloor', { map: floorT.map, normalMap: floorT.normalMap, roughnessMap: floorT.roughnessMap, roughness: 0.7, normalScale: new THREE.Vector2(0.4, 0.4), cast: false });
   const matT = tileTextures({ px: 512, cols: 1, rows: 1, grout: 3, colors: ['#4a8a5e'], groutColor: '#2f5f40', seed: 45, rough: 0.8 });
   {
@@ -393,7 +394,7 @@ export function buildObedienceRing(renderer: THREE.WebGLRenderer): ObedienceRing
 
   // lighting: an overhead "sun" (the rig of spotlights), plus a bright hall fill
   const sun = makeSun('#fff4e2', 3.0, new THREE.Vector3(-0.25, -1, -0.45), ringC.clone(), 2048);
-  sun.shadow.radius = 4;
+  sun.shadow.radius = 4 * (sun.shadow.mapSize.x / 2048);
   fitShadow(sun, new THREE.Box3(new THREE.Vector3(ringC.x - ringHX - 1, 0, ringC.z - ringHZ - 1), new THREE.Vector3(ringC.x + ringHX + 1, 1.5, ringC.z + ringHZ + 1)), 0.1);
   group.add(sun, sun.target);
   group.add(new THREE.HemisphereLight('#f2f5fa', '#b9a88c', 1.35));

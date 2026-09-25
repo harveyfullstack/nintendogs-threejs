@@ -91,7 +91,7 @@ async function discContest(game: Game, cls: number): Promise<GameScene> {
   const arena = await loadDiscArena(game.renderer);
   setupPlace(scene, arena);
   const d = game.dog!;
-  const actor = game.actorFor(d);
+  const actor = await game.actorFor(d);
   game.resetActor(actor);
   actor.bounds = arena.bounds;
   actor.obstacles = arena.obstacles;
@@ -233,7 +233,7 @@ async function obedienceContest(game: Game, cls: number): Promise<GameScene> {
   const ring = await loadObedience(game.renderer);
   setupPlace(scene, ring);
   const d = game.dog!;
-  const actor = game.actorFor(d);
+  const actor = await game.actorFor(d);
   game.resetActor(actor);
   actor.bounds = ring.bounds;
   actor.obstacles = ring.obstacles;
@@ -388,7 +388,7 @@ async function agilityContest(game: Game, cls: number): Promise<GameScene> {
     return { scene, camera, update() {} };
   }
   setupPlace(scene, course);
-  const actor = game.actorFor(d);
+  const actor = await game.actorFor(d);
   game.resetActor(actor);
   actor.bounds = course.bounds;
   const obs = course.course;

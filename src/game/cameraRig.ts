@@ -1,5 +1,12 @@
 import * as THREE from 'three';
 
+const _tgt = new THREE.Vector3();
+const _fwd = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _pos = new THREE.Vector3();
+const _rel = new THREE.Vector3();
+const _toT = new THREE.Vector3();
+
 // Nintendogs style camera: you sit on the floor at the front of the room and
 // the view turns and drifts to keep your puppy framed.
 
@@ -70,20 +77,21 @@ export class FollowCamera {
 
   update(dt: number, focus: THREE.Vector3 | null, snap = false) {
     const b = this.base;
-    const tgt = focus ? b.target.clone().lerp(focus, this.follow) : b.target.clone();
+    const tgt = _tgt.copy(b.target);
+    if (focus) tgt.lerp(focus, this.follow);
     // drift sideways to follow
-    const fwd = b.target.clone().sub(b.position).setY(0).normalize();
-    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-    const pos = b.position.clone();
+    const fwd = _fwd.copy(b.target).sub(b.position).setY(0).normalize();
+    const right = _right.set(-fwd.z, 0, fwd.x);
+    const pos = _pos.copy(b.position);
     if (focus) {
-      const rel = focus.clone().sub(b.position);
+      const rel = _rel.copy(focus).sub(b.position);
       const side = rel.dot(right);
       pos.addScaledVector(right, THREE.MathUtils.clamp(side * this.lateral, -1.2, 1.2));
       const ahead = rel.dot(fwd);
       if (ahead > 1.6) pos.addScaledVector(fwd, (ahead - 1.6) * 0.35);
     }
     // zoom: move along the view line
-    const toT = tgt.clone().sub(pos);
+    const toT = _toT.copy(tgt).sub(pos);
     const dist = toT.length();
     const want = Math.max(this.minDist, dist * this.zoom);
     pos.copy(tgt).addScaledVector(toT.normalize(), -want);

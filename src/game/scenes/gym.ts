@@ -63,5 +63,5 @@ export async function createGym(game: Game): Promise<GameScene> {
   };
   render();
   sound.music('contest');
-  return { scene, camera, update() {} };
+  return { scene, camera, still: true, update() {} };
 }

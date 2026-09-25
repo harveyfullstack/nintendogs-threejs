@@ -15,6 +15,7 @@ import { createWalk, createWalkMap } from './scenes/walk';
 import { createContest } from './scenes/contest';
 import { sound } from './sound';
 import { loadSave, newDog, newSave, simulateTime, writeSave } from './state';
+import { deviceTier } from './quality';
 import { TRICKS } from './tricks';
 
 export async function boot() {
@@ -89,22 +90,24 @@ async function start(loading: HTMLElement) {
   game.save = save ?? newSave('');
   if (!(window as any).__noPersist) writeSave(game.save);
   const retro = params.get('retro') ?? game.save.settings.retro ?? 'subtle';
-  game.engine.retro.mode = retro === 'off' || retro === 'ds' ? retro : 'subtle';
+  game.engine.setRetroMode(retro === 'off' || retro === 'ds' ? retro : 'subtle');
   game.engine.start();
   if (params.has('fps')) {
-    const el = h('div', { style: { position: 'fixed', right: '8px', bottom: '8px', zIndex: '99', font: '12px monospace', color: '#fff', background: '#0009', padding: '4px 8px', borderRadius: '6px', whiteSpace: 'pre' } });
+    const el = h('div', { style: { position: 'fixed', right: '8px', bottom: '8px', zIndex: '99', font: '12px monospace', color: '#fff', background: '#0009', padding: '4px 8px', borderRadius: '6px', whiteSpace: 'pre', pointerEvents: 'none' } });
     document.body.append(el);
     let frames = 0, last = performance.now();
     const prev = game.engine.onFrame;
-    game.engine.renderer.info.autoReset = true;
     game.engine.onFrame = (dt) => {
       prev?.(dt);
       frames++;
       const now = performance.now();
       if (now - last > 1000) {
-        const i = game.engine.renderer.info;
-        el.textContent = `${Math.round((frames * 1000) / (now - last))} fps  ${i.render.calls} calls  ${(i.render.triangles / 1e6).toFixed(2)}M tris`;
-        (window as any).__fps = Math.round((frames * 1000) / (now - last));
+        const e = game.engine;
+        const i = e.renderer.info;
+        const fps = Math.round((frames * 1000) / (now - last));
+        el.textContent = `${fps} fps  ${i.render.calls} calls  ${(i.render.triangles / 1e6).toFixed(2)}M tris\n`
+          + `${e.renderSize.x}x${e.renderSize.y}  level ${e.adaptive.level}  ${deviceTier()}  tex ${i.memory.textures}  geo ${i.memory.geometries}`;
+        (window as any).__fps = fps;
         frames = 0;
         last = now;
       }

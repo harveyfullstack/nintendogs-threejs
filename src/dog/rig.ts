@@ -129,6 +129,10 @@ export interface LookTarget {
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _q = new THREE.Quaternion();
+const _dq = new THREE.Quaternion();
+const GAITS: Gait[] = ['walk', 'trot', 'gallop'];
+const LEG_KEYS = Object.keys(LEGS) as LegKey[];
+const _locals = new Float64Array(4);
 const _e = new THREE.Euler();
 const _m = new THREE.Matrix4();
 
@@ -343,9 +347,10 @@ export class DogRig {
     this.tailLayer(dt);
     this.headLayer(dt);
     this.faceLayer(dt);
-    for (const [bone, a] of Object.entries(this.overlay)) {
+    for (const bone in this.overlay) {
       const i = this.index[bone];
       if (i === undefined) continue;
+      const a = this.overlay[bone];
       this.out[i * 3] += a[0]; this.out[i * 3 + 1] += a[1]; this.out[i * 3 + 2] += a[2];
     }
     // breathing
@@ -396,12 +401,12 @@ export class DogRig {
     const rel = this.speed / H; // body heights per second
     const want: Gait = rel < 1.3 ? 'walk' : rel < 3.6 ? 'trot' : 'gallop';
     this.gait = want;
-    for (const g of ['walk', 'trot', 'gallop'] as Gait[]) {
+    for (const g of GAITS) {
       this.gaitBlend[g] = smoothTo(this.gaitBlend[g], g === want ? 1 : 0, 6, dt);
     }
     const w = this.moveWeight;
     let freq = 0, duty = 0;
-    for (const g of ['walk', 'trot', 'gallop'] as Gait[]) {
+    for (const g of GAITS) {
       freq += GAIT[g].freq * this.gaitBlend[g];
       duty += GAIT[g].duty * this.gaitBlend[g];
     }
@@ -474,12 +479,12 @@ export class DogRig {
     const freq = Math.max(0.3, this.stepFreq);
     const wTurn = this.turnRate;
     const bodyX = o[idx.body * 3];
-    for (const key of Object.keys(LEGS) as LegKey[]) {
+    for (const key of LEG_KEYS) {
       const leg = L[key];
       const b = LEGS[key];
       // foot target, blended over the active gaits
       let fx = 0, fz = 0, lift = 0, gwSum = 0;
-      for (const g of ['walk', 'trot', 'gallop'] as Gait[]) {
+      for (const g of GAITS) {
         const gw = this.gaitBlend[g];
         if (gw < 0.01) continue;
         const G = GAIT[g];
@@ -535,7 +540,8 @@ export class DogRig {
       const a0 = th1 - this.restDir[b[0]];
       const a1 = th2 - this.restDir[b[1]];
       const a2 = th3 - this.restDir[b[2]];
-      const locals = [a0 - parentAbs, a1 - a0, a2 - a1, pawPitch - a2];
+      const locals = _locals;
+      locals[0] = a0 - parentAbs; locals[1] = a1 - a0; locals[2] = a2 - a1; locals[3] = pawPitch - a2;
       for (let i = 0; i < 4; i++) {
         const j = idx[b[i]] * 3;
         o[j] += (locals[i] - o[j]) * w;
@@ -630,7 +636,7 @@ export class DogRig {
     // angular velocity of the head drives floppy ears
     head.updateWorldMatrix(true, false);
     head.getWorldQuaternion(_q);
-    const dq = this.prevHeadQ.clone().invert().multiply(_q);
+    const dq = _dq.copy(this.prevHeadQ).invert().multiply(_q);
     this.prevHeadQ.copy(_q);
     _e.setFromQuaternion(dq, 'XYZ');
     const inv = 1 / Math.max(dt, 1e-3);

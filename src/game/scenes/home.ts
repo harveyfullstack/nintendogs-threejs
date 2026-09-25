@@ -49,6 +49,8 @@ class HomeScene implements GameScene {
 
   async init() {
     const game = this.game;
+    const actorsReady = Promise.all(this.save.dogs.map((d) => game.actorFor(d)));
+    actorsReady.catch(() => {}); // reported where it's awaited
     const room = (this.room = await loadRoom(this.save.roomTheme, game.renderer));
     this.scene.add(room.group);
     if (room.environment) this.scene.environment = room.environment;
@@ -76,8 +78,10 @@ class HomeScene implements GameScene {
       { x: room.spots.water.x, z: room.spots.water.z, r: this.waterBowl.radius },
     ];
     const list = this.save.dogs;
+    // all the dogs are built at once (in workers) while the room was being put together
+    const actors = await actorsReady;
     list.forEach((d, i) => {
-      const actor = game.actorFor(d);
+      const actor = actors[i];
       game.resetActor(actor);
       actor.bounds = room.bounds;
       actor.obstacles = [...room.obstacles, ...bowlObstacles];
@@ -311,17 +315,24 @@ class HomeScene implements GameScene {
     game.overlay.root.append(flash);
     requestAnimationFrame(() => (flash.style.opacity = '0'));
     setTimeout(() => flash.remove(), 600);
-    const src = game.renderer.domElement;
-    const w = 640, hgt = Math.round((src.height / src.width) * w);
-    const cv = document.createElement('canvas');
-    cv.width = w; cv.height = hgt;
-    cv.getContext('2d')!.drawImage(src, 0, 0, w, hgt);
-    const url = cv.toDataURL('image/jpeg', 0.82);
     const d = this.focusSave();
-    this.save.photos.push({ id: Math.random().toString(36).slice(2), dataUrl: url, date: Date.now(), dogName: d?.name ?? '' });
-    if (this.save.photos.length > 12) this.save.photos.shift();
-    game.persist();
-    game.overlay.toast('📸 Saved to your album!');
+    // the canvas can only be read right after a frame is drawn (it isn't kept around)
+    game.engine.capture((src) => {
+      const w = 640, hgt = Math.round((src.height / src.width) * w);
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = hgt;
+      const g = cv.getContext('2d');
+      if (!g) return;
+      // keep the DS looks' pixels crisp
+      g.imageSmoothingEnabled = !game.engine.retro.enabled;
+      g.drawImage(src, 0, 0, w, hgt);
+      const url = cv.toDataURL('image/jpeg', 0.82);
+      cv.width = cv.height = 0;
+      this.save.photos.push({ id: Math.random().toString(36).slice(2), dataUrl: url, date: Date.now(), dogName: d?.name ?? '' });
+      if (this.save.photos.length > 12) this.save.photos.shift();
+      game.persist();
+      game.overlay.toast('📸 Saved to your album!');
+    });
   }
 
   // ------------------------------------------------------------------ name lesson

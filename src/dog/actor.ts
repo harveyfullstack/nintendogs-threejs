@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { Bounds, Circle } from '../world/types';
 import type { Breed, CoatDef } from './breeds';
 import { DogModel } from './dogModel';
+import type { DogMeshData } from './meshData';
+import { buildDogMeshAsync } from './meshPool';
 import { DogRig } from './rig';
 
 // A dog in the world: model + rig + locomotion + touch proxy.
@@ -60,8 +62,15 @@ export class DogActor {
   exertion = 0;
   jump: { from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; h: number; onLand?: () => void } | null = null;
 
-  constructor(readonly breed: Breed, readonly coat: CoatDef, quality = 1) {
-    this.model = new DogModel(breed, coat, { quality });
+  /** Make a dog without blocking the page (its mesh is built in a worker). */
+  static async create(breed: Breed, coat: CoatDef, quality = 1): Promise<DogActor> {
+    const mesh = await buildDogMeshAsync(breed, coat, quality);
+    return new DogActor(breed, coat, quality, mesh);
+  }
+
+  /** Builds the mesh on the spot unless one is passed in; prefer DogActor.create. */
+  constructor(readonly breed: Breed, readonly coat: CoatDef, quality = 1, mesh?: DogMeshData) {
+    this.model = new DogModel(breed, coat, { quality, mesh });
     this.rig = new DogRig(this.model);
     this.rig.solvePoses();
     this.group = this.model.root;
@@ -189,6 +198,7 @@ export class DogActor {
     rig.turnRate = this.jump ? 0 : this.turnSmooth;
     this.exertion = THREE.MathUtils.clamp(this.exertion + (this.speed > 1.0 ? dt * 0.12 : -dt * 0.05), 0, 1);
     rig.update(dt);
+    this.model.updateDetail();
   }
 
   private collide() {

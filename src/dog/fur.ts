@@ -164,18 +164,25 @@ float furContrast = 1.0 - 0.75 * smoothstep(0.3, 1.2, furCpp);
   vec3 fwp = fwidth(fp);
   float cellsPerPixel = max(max(fwp.x, max(fwp.y, fwp.z)), 1e-4);
   float level = clamp(log2(cellsPerPixel / 0.3), 0.0, 1.999);
-  float l0 = floor(level);
-  float lf = smoothstep(0.25, 0.75, fract(level));
-  vec3 furN = normalize(vRestNrm);
-  float tint0 = 1.0, tint1 = 1.0;
-  float c0 = furStrands(fp * exp2(-l0), furN, furT, tint0);
-  float c1 = furStrands(fp * exp2(-l0 - 1.0), furN, furT, tint1);
-  float cov = mix(c0, c1, lf);
-  strandTint = mix(tint0, tint1, lf);
   float lod = smoothstep(1.6, 2.6, log2(cellsPerPixel / 0.3));
   furLod = lod;
   float expected = clamp(1.05 - furT * 1.15, 0.0, 1.0);
-  cov = mix(cov, expected, lod);
+  float cov = expected;
+  strandTint = 1.0;
+  // strands only where they still show: far away the coat is its smooth average
+  if (lod < 1.0) {
+    float l0 = floor(level);
+    float lf = smoothstep(0.25, 0.75, fract(level));
+    vec3 furN = normalize(vRestNrm);
+    float tint0 = 1.0, tint1 = 1.0;
+    float c0 = furStrands(fp * exp2(-l0), furN, furT, tint0);
+    // the coarser tufts only while blending towards them
+    float c1 = c0;
+    if (lf > 0.0) c1 = furStrands(fp * exp2(-l0 - 1.0), furN, furT, tint1);
+    else tint1 = tint0;
+    cov = mix(mix(c0, c1, lf), expected, lod);
+    strandTint = mix(tint0, tint1, lf);
+  }
   strandTint = mix(1.0, mix(strandTint, 1.0, lod), furContrast);
   diffuseColor.a = cov;
 #endif
@@ -229,7 +236,7 @@ export function makeFurMaterial(uniforms: FurUniforms, shell: boolean): THREE.Me
       .replace('#include <color_fragment>', FRAG_COLOR)
       .replace('#include <roughnessmap_fragment>', FRAG_ROUGH);
   };
-  mat.customProgramCacheKey = () => (shell ? 'fur-shell-v1' : 'fur-base-v1');
+  mat.customProgramCacheKey = () => (shell ? 'fur-shell-v2' : 'fur-base-v2');
   return mat;
 }
 

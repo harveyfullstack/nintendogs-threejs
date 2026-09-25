@@ -301,6 +301,8 @@ export async function createWalkMap(game: Game): Promise<GameScene> {
   return {
     scene,
     camera,
+    // the map is a 2D canvas over an empty backdrop: nothing to redraw every frame
+    still: true,
     update() {},
     exit() {
       window.removeEventListener('resize', fit);
@@ -322,14 +324,22 @@ interface WalkEvent { s: number; kind: 'present' | 'poi' | 'pee' | 'poop' | 'fri
 export async function createWalk(game: Game, args: { nodes: Node[]; presents: WalkPlan['presents'] }): Promise<GameScene> {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 2000);
+  const d = game.dog!;
+  // the dogs are built in workers while the town is put together here
+  const npcBreed = BREEDS[Math.floor(Math.random() * BREEDS.length)];
+  const npcCoat = npcBreed.coats[Math.floor(Math.random() * npcBreed.coats.length)];
+  const npcReady = DogActor.create(npcBreed, npcCoat, Math.min(0.8, game.quality));
+  const actorReady = game.actorFor(d);
+  // reported where they're awaited
+  npcReady.catch(() => {});
+  actorReady.catch(() => {});
   const town = await loadTown(TOWN, game.renderer);
   scene.add(town.group);
   scene.environment = town.environment ?? null;
   scene.background = town.background ?? new THREE.Color('#a9d7f5');
   scene.fog = town.fog ?? new THREE.Fog('#cfe6f5', 60, 180);
 
-  const d = game.dog!;
-  const actor = game.actorFor(d);
+  const actor = await actorReady;
   game.resetActor(actor);
   scene.add(actor.group);
   game.applyCoatState(d, actor);
@@ -410,8 +420,7 @@ export async function createWalk(game: Game, args: { nodes: Node[]; presents: Wa
   events.sort((a, b) => a.s - b.s);
 
   // --- NPC dog for the "friend" encounter
-  const npcBreed = BREEDS[Math.floor(Math.random() * BREEDS.length)];
-  const npc = new DogActor(npcBreed, npcBreed.coats[Math.floor(Math.random() * npcBreed.coats.length)], 0.8);
+  const npc = await npcReady;
   npc.group.visible = false;
   scene.add(npc.group);
 

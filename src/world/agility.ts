@@ -7,7 +7,7 @@ import type { AgilityCourse, AgilityObstacle, AgilityObstacleKind, Bounds, Circl
 import {
   Atlas, Batch, ROUNDED, TreeFactory, addBench, atlasQuad, boxGeo, centerText, createFlags, createGrassField,
   createKit, createOutdoorLights, cylGeo, drawPaw, flatRect, makeCanvas, makeGrassMaterial, mul, mulberry32, roundRect,
-  tm, type AtlasRect, type Kit,
+  tm, type AtlasRect, type Kit, farBatch,
 } from './town';
 import { addAdBoard, addBleachers, addBunting, addFlagPole, addTent, addVenueSurroundings, buildVenueAtlas, createCrowd } from './discArena';
 
@@ -178,7 +178,7 @@ export function buildAgilityCourse(renderer: THREE.WebGLRenderer): AgilityCourse
   const b = new Batch(0);
   b.aliases = { metal: 'trim', paint: 'trim' };
   b.noCast = new Set(['field', 'facade']);
-  const far = new Batch(0);
+  const far = farBatch();
   const trees = new TreeFactory(4);
   const flagGeos: THREE.BufferGeometry[] = [];
   const obstacles: Circle[] = [];

@@ -71,6 +71,11 @@ export interface SaveData {
 }
 
 const KEY = 'nintendogs-three-save-v1';
+/**
+ * Photos live under their own key: they're big (tens of KB each) and the save is
+ * written on almost every action, so keeping them apart keeps those writes tiny.
+ */
+const PHOTOS_KEY = 'nintendogs-three-photos-v1';
 
 export function newSave(ownerName: string): SaveData {
   const now = Date.now();
@@ -127,11 +132,31 @@ export function loadSave(): SaveData | null {
     if (!raw) return null;
     const s = JSON.parse(raw) as SaveData;
     if (!s || typeof s !== 'object' || s.version !== 1) return null;
-    return normalizeSave(s);
+    // saves from before the album moved out still carry their photos: those win, and
+    // move to their own key on the next write
+    const inSave = Array.isArray(s.photos) && s.photos.length > 0;
+    if (!inSave) s.photos = loadPhotos();
+    const out = normalizeSave(s);
+    photosWritten = inSave ? null : photoSignature(out.photos);
+    return out;
   } catch {
     return null;
   }
 }
+
+function loadPhotos(): Photo[] {
+  try {
+    const raw = localStorage.getItem(PHOTOS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+/** What was last written to PHOTOS_KEY (so unchanged albums aren't rewritten). */
+let photosWritten: string | null = null;
+const photoSignature = (photos: Photo[]) => photos.map((p) => p.id).join(',');
 
 const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 const obj = <T extends object>(v: unknown, fallback: T): T => (v && typeof v === 'object' && !Array.isArray(v) ? (v as T) : fallback);
@@ -177,23 +202,53 @@ export function writeSave(s: SaveData, immediate = false) {
   s.lastUpdate = Date.now();
   if ((window as any).__noPersist) return;
   const doWrite = () => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(s));
-    } catch (e) {
-      // photos can blow the quota; drop the oldest and retry once
-      if (s.photos.length) {
+    // The save itself goes first: it's what matters, and writing it is also what moves
+    // the photos out of saves made before they had their own key, freeing their space.
+    const main = JSON.stringify({ ...s, photos: [] });
+    for (;;) {
+      try {
+        localStorage.setItem(KEY, main);
+        break;
+      } catch (e) {
+        // storage is full: the album gives up its oldest photo to make room
+        if (!quotaFull(e) || !s.photos.length) break; // unavailable: keep playing, try again next time
         s.photos.shift();
-        try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* give up */ }
+        writePhotos(s);
       }
     }
+    writePhotos(s);
   };
   if (immediate) { doWrite(); return; }
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(doWrite, 400);
 }
 
+/** Storage is full (as opposed to unavailable, where deleting photos wouldn't help). */
+function quotaFull(e: unknown) {
+  return e instanceof DOMException
+    && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+}
+
+/** Write the album, only when it changed; photos can blow the quota, so drop the oldest until it fits. */
+function writePhotos(s: SaveData) {
+  if (photoSignature(s.photos) === photosWritten) return;
+  for (;;) {
+    try {
+      localStorage.setItem(PHOTOS_KEY, JSON.stringify(s.photos));
+      photosWritten = photoSignature(s.photos);
+      return;
+    } catch (e) {
+      if (!quotaFull(e) || !s.photos.length) return;
+      s.photos.shift();
+    }
+  }
+}
+
 export function deleteSave() {
-  try { localStorage.removeItem(KEY); } catch { /* storage unavailable: nothing to delete */ }
+  try {
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(PHOTOS_KEY);
+  } catch { /* storage unavailable: nothing to delete */ }
 }
 
 const HOUR = 3600 * 1000;

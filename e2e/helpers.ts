@@ -119,6 +119,10 @@ export class Player {
     const path: Point[] = [];
     for (let i = 0; i <= 6; i++) path.push({ x: from.x + (dx * i) / 6, y: from.y + (dy * i) / 6 });
     await this.drag(path, 16);
+    // To the browser a flick is a fling, and Chromium swallows a tap that comes within
+    // about a second of one (it takes it for the tap that stops the fling). Let it pass,
+    // or a quick tap afterwards (say, on Go Home) silently does nothing.
+    if (this.cdp) await this.page.waitForTimeout(1200);
   }
 
   // ------------------------------------------------------------------ game time
